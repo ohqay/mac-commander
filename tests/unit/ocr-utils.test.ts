@@ -58,6 +58,12 @@ import {
   extractTextFromImage,
   findTextInImage,
   getTextLocations,
+  getOCRMetrics,
+  getOCRWorkerStates,
+  isUsingWorkerPool,
+  extractTextFromImages,
+  getTextLocationsFromImages,
+  OCRTaskPriority,
 } from '../../src/ocr-utils';
 import { createWorker } from 'tesseract.js';
 
@@ -81,9 +87,9 @@ describe('ocr-utils', () => {
       expect(mockCreateWorker).toHaveBeenCalledWith('eng');
     });
 
-    it('should not create multiple workers', async () => {
-      await initializeOCR();
-      await initializeOCR();
+    it('should not create multiple workers with legacy mode', async () => {
+      await initializeOCR(true); // Use legacy mode
+      await initializeOCR(true); // Use legacy mode
       expect(mockCreateWorker).toHaveBeenCalledTimes(1);
     });
   });
@@ -136,6 +142,9 @@ describe('ocr-utils', () => {
     });
 
     it('should handle OCR errors', async () => {
+      // Force legacy mode to avoid worker pool retry logic
+      await initializeOCR(true);
+      
       mockWorker.recognize.mockRejectedValueOnce(new Error('OCR failed'));
 
       const mockImage = {
@@ -261,6 +270,9 @@ describe('ocr-utils', () => {
     });
 
     it('should handle errors', async () => {
+      // Force legacy mode to avoid worker pool retry logic
+      await initializeOCR(true);
+      
       mockWorker.recognize.mockRejectedValueOnce(new Error('OCR failed'));
 
       const mockImage = {
@@ -273,6 +285,146 @@ describe('ocr-utils', () => {
       await expect(getTextLocations(mockImage as any)).rejects.toThrow(
         'Failed to get text locations: OCR failed'
       );
+    });
+  });
+
+  describe('worker pool functionality', () => {
+    afterEach(async () => {
+      await terminateOCR();
+    });
+
+    it('should initialize with worker pool by default', async () => {
+      await initializeOCR(); // Should use worker pool by default
+      
+      expect(isUsingWorkerPool()).toBe(true);
+      
+      const metrics = getOCRMetrics();
+      expect(metrics).toBeDefined();
+      expect(metrics!.totalWorkers).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should fallback to legacy worker when specified', async () => {
+      await initializeOCR(true); // Use legacy worker
+      
+      expect(isUsingWorkerPool()).toBe(false);
+      
+      const metrics = getOCRMetrics();
+      expect(metrics).toBeNull();
+    });
+
+    it('should provide worker state information when using pool', async () => {
+      await initializeOCR(); // Worker pool
+      
+      const workerStates = getOCRWorkerStates();
+      expect(workerStates).toBeDefined();
+      expect(Array.isArray(workerStates)).toBe(true);
+    });
+
+    it('should return null for worker states when using legacy', async () => {
+      await initializeOCR(true); // Legacy worker
+      
+      const workerStates = getOCRWorkerStates();
+      expect(workerStates).toBeNull();
+    });
+
+    it('should extract text from multiple images concurrently', async () => {
+      await initializeOCR(); // Worker pool for concurrency
+      
+      const mockImages = [
+        { width: 100, height: 100, channels: 3, data: new Uint8Array(100 * 100 * 3) },
+        { width: 100, height: 100, channels: 3, data: new Uint8Array(100 * 100 * 3) },
+        { width: 100, height: 100, channels: 3, data: new Uint8Array(100 * 100 * 3) }
+      ];
+
+      const results = await extractTextFromImages(mockImages as any[]);
+      
+      expect(results).toHaveLength(3);
+      results.forEach(result => {
+        expect(result).toBe('Mock OCR text');
+      });
+    });
+
+    it('should extract text from multiple images sequentially with legacy worker', async () => {
+      await initializeOCR(true); // Legacy worker
+      
+      const mockImages = [
+        { width: 100, height: 100, channels: 3, data: new Uint8Array(100 * 100 * 3) },
+        { width: 100, height: 100, channels: 3, data: new Uint8Array(100 * 100 * 3) }
+      ];
+
+      const results = await extractTextFromImages(mockImages as any[]);
+      
+      expect(results).toHaveLength(2);
+      results.forEach(result => {
+        expect(result).toBe('Mock OCR text');
+      });
+    });
+
+    it('should get text locations from multiple images', async () => {
+      await initializeOCR(); // Worker pool
+      
+      const mockImages = [
+        { width: 100, height: 100, channels: 3, data: new Uint8Array(100 * 100 * 3) },
+        { width: 100, height: 100, channels: 3, data: new Uint8Array(100 * 100 * 3) }
+      ];
+
+      const results = await getTextLocationsFromImages(mockImages as any[]);
+      
+      expect(results).toHaveLength(2);
+      results.forEach(locations => {
+        expect(locations).toHaveLength(3); // Mock returns 3 words
+        expect(locations[0].text).toBe('Mock');
+        expect(locations[1].text).toBe('OCR');
+        expect(locations[2].text).toBe('text');
+      });
+    });
+
+    it('should handle priority in OCR operations', async () => {
+      await initializeOCR(); // Worker pool
+      
+      const mockImage = {
+        width: 100,
+        height: 100,
+        channels: 3,
+        data: new Uint8Array(100 * 100 * 3),
+      };
+
+      // Test with different priorities
+      const normalResult = await extractTextFromImage(mockImage as any, undefined, OCRTaskPriority.NORMAL);
+      const highResult = await extractTextFromImage(mockImage as any, undefined, OCRTaskPriority.HIGH);
+      const lowResult = await extractTextFromImage(mockImage as any, undefined, OCRTaskPriority.LOW);
+      
+      expect(normalResult).toBe('Mock OCR text');
+      expect(highResult).toBe('Mock OCR text');
+      expect(lowResult).toBe('Mock OCR text');
+    });
+
+    it('should handle priority in text search operations', async () => {
+      await initializeOCR(); // Worker pool
+      
+      const mockImage = {
+        width: 100,
+        height: 100,
+        channels: 3,
+        data: new Uint8Array(100 * 100 * 3),
+      };
+
+      const found = await findTextInImage(mockImage as any, 'Mock', OCRTaskPriority.HIGH);
+      expect(found).toBe(true);
+    });
+
+    it('should handle priority in location detection operations', async () => {
+      await initializeOCR(); // Worker pool
+      
+      const mockImage = {
+        width: 100,
+        height: 100,
+        channels: 3,
+        data: new Uint8Array(100 * 100 * 3),
+      };
+
+      const locations = await getTextLocations(mockImage as any, undefined, OCRTaskPriority.URGENT);
+      expect(locations).toHaveLength(3);
     });
   });
 });
