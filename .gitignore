@@ -37,6 +37,16 @@ coverage/
 .vitest/
 *.lcov
 
+# Test build files
+tests/**/*.js
+tests/**/*.js.map
+tests/**/*.d.ts
+tests/**/*.d.ts.map
+vitest.config.js
+vitest.config.js.map
+vitest.config.d.ts
+vitest.config.d.ts.map
+
 # Temporary files
 tmp/
 temp/
