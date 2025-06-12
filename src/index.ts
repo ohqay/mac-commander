@@ -12,6 +12,7 @@ import { logger } from './logger.js';
 import { initTempFolder } from './screenshot-utils.js';
 import { terminateOCR } from './ocr-utils.js';
 import { getUserFriendlyErrorMessage, MCPError } from './errors.js';
+import { getPerformanceMonitor } from './core/performance-monitor.js';
 
 // Import tool handlers
 import { screenshotToolHandlers } from './tools/screenshot-tools.js';
@@ -73,6 +74,17 @@ process.on("SIGTERM", async () => {
 async function cleanup() {
   try {
     logger.info("Starting cleanup...");
+    
+    // Stop performance monitoring
+    try {
+      const performanceMonitor = getPerformanceMonitor();
+      performanceMonitor.stop();
+      performanceMonitor.cleanup();
+      logger.info("Performance monitoring stopped");
+    } catch (error) {
+      logger.warn("Error stopping performance monitor", error as Error);
+    }
+    
     await terminateOCR();
     logger.info("Cleanup completed");
   } catch (error) {
@@ -116,13 +128,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const result = await handler.execute(args, context);
     
     const duration = Date.now() - startTime;
-    logger.info(`Tool ${toolName} completed in ${duration}ms`);
+    const success = !result.isError;
+    
+    // Record tool execution for performance monitoring
+    context.recordToolExecution?.(toolName, duration, success);
+    
+    logger.info(`Tool ${toolName} completed in ${duration}ms`, { success });
     
     // Return the result directly - it already has the correct format
     return result as any;
     
   } catch (error) {
     const duration = Date.now() - startTime;
+    
+    // Record failed tool execution for performance monitoring
+    context.recordToolExecution?.(toolName, duration, false);
+    
     logger.error(`Tool ${toolName} failed after ${duration}ms`, error as Error);
     
     // Clean up context on error
@@ -160,6 +181,43 @@ async function main() {
   try {
     logger.info("Starting macOS Simulator MCP server...");
     
+    // Initialize performance monitoring
+    try {
+      const performanceMonitor = getPerformanceMonitor({
+        resourceMonitoringIntervalMs: 10000, // 10 seconds
+        performanceReportIntervalMs: 300000, // 5 minutes
+        enableAnomalyDetection: true,
+        thresholds: {
+          cpuUsageWarning: 80,
+          cpuUsageCritical: 95,
+          memoryUsageWarning: 85,
+          memoryUsageCritical: 95,
+          executionTimeWarning: 3000, // 3 seconds
+          executionTimeCritical: 10000, // 10 seconds
+          errorRateWarning: 0.1, // 10%
+          errorRateCritical: 0.25, // 25%
+          queueLengthWarning: 15,
+          queueLengthCritical: 30
+        }
+      });
+      
+      performanceMonitor.start();
+      logger.info("Performance monitoring started");
+      
+      // Set up alert handling
+      performanceMonitor.on('thresholdViolation', ({ metricName, violation }) => {
+        logger.warn(`Performance alert: ${metricName}`, {
+          type: violation.type,
+          value: violation.value,
+          threshold: violation.threshold,
+          consecutiveCount: violation.consecutiveCount
+        });
+      });
+      
+    } catch (error) {
+      logger.warn("Could not initialize performance monitoring", error as Error);
+    }
+    
     // Initialize temp folder for screenshots
     await initTempFolder();
     
@@ -172,7 +230,7 @@ async function main() {
     // Connect server to transport
     await server.connect(transport);
     
-    logger.info("macOS Simulator MCP server running");
+    logger.info("macOS Simulator MCP server running with performance monitoring");
   } catch (error) {
     logger.error("Failed to start server", error as Error);
     process.exit(1);

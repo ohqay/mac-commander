@@ -2,13 +2,19 @@ import { randomUUID } from 'crypto';
 import { CacheManagerImpl } from './cache-manager.js';
 import { ExecutionContext, CacheManager, PerformanceTracker } from './types.js';
 import { logger } from '../logger.js';
+import { getPerformanceMonitor } from './performance-monitor.js';
 
 /**
- * Performance tracker implementation
+ * Enhanced performance tracker implementation with integration to PerformanceMonitor
  */
 class PerformanceTrackerImpl implements PerformanceTracker {
   private metrics: Map<string, number[]> = new Map();
   private timers: Map<string, number> = new Map();
+  private sessionId: string;
+  
+  constructor(sessionId: string) {
+    this.sessionId = sessionId;
+  }
   
   startTimer(operation: string): void {
     this.timers.set(operation, Date.now());
@@ -27,6 +33,34 @@ class PerformanceTrackerImpl implements PerformanceTracker {
     const times = this.metrics.get(operation) || [];
     times.push(duration);
     this.metrics.set(operation, times);
+    
+    // Report to PerformanceMonitor if it's a tool execution
+    if (operation.startsWith('tool_')) {
+      try {
+        const performanceMonitor = getPerformanceMonitor();
+        // Assume success for now - this could be enhanced to track actual success/failure
+        performanceMonitor.recordToolExecution(operation, duration, true);
+      } catch (error) {
+        // Performance monitor might not be available during initialization
+        logger.debug('Could not report to PerformanceMonitor', { operation, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+  
+  /**
+   * Record a tool execution with explicit success/failure status
+   */
+  recordToolExecution(toolName: string, duration: number, success: boolean): void {
+    const times = this.metrics.get(toolName) || [];
+    times.push(duration);
+    this.metrics.set(toolName, times);
+    
+    try {
+      const performanceMonitor = getPerformanceMonitor();
+      performanceMonitor.recordToolExecution(toolName, duration, success);
+    } catch (error) {
+      logger.debug('Could not report to PerformanceMonitor', { toolName, error: error instanceof Error ? error.message : String(error) });
+    }
   }
   
   getMetrics(operation: string): any {
@@ -72,7 +106,7 @@ export class ExecutionContextImpl implements ExecutionContext {
     this.startTime = Date.now();
     this.sharedResources = new Map();
     this.cacheManager = CacheManagerImpl.getInstance();
-    this.performanceTracker = new PerformanceTrackerImpl();
+    this.performanceTracker = new PerformanceTrackerImpl(this.sessionId);
     
     logger.debug('ExecutionContext created', { sessionId: this.sessionId });
   }
@@ -108,14 +142,23 @@ export class ExecutionContextImpl implements ExecutionContext {
   }
   
   /**
+   * Record a tool execution with performance tracking
+   */
+  recordToolExecution(toolName: string, duration: number, success: boolean): void {
+    (this.performanceTracker as PerformanceTrackerImpl).recordToolExecution(toolName, duration, success);
+  }
+  
+  /**
    * Clean up resources
    */
   cleanup(): void {
+    const duration = this.getDuration();
     this.sharedResources.clear();
     (this.performanceTracker as PerformanceTrackerImpl).clear();
+    
     logger.debug('ExecutionContext cleaned up', { 
       sessionId: this.sessionId,
-      duration: this.getDuration()
+      duration
     });
   }
 }

@@ -6,6 +6,7 @@ import { ensurePermissions } from '../permissions.js';
 import { withRetry } from '../retry.js';
 import { getDiagnosticReport } from '../health-check.js';
 import { ErrorDetector } from '../error-detection.js';
+import { getPerformanceMonitor } from '../core/performance-monitor.js';
 
 // Schema definitions
 const WaitToolSchema = z.object({
@@ -24,6 +25,13 @@ const CheckForErrorsToolSchema = z.object({
 });
 
 const GetScreenInfoToolSchema = z.object({});
+
+const PerformanceDashboardToolSchema = z.object({
+  includeMetrics: z.boolean().optional().describe("Include detailed metrics in the response (default: true)"),
+  includeRecommendations: z.boolean().optional().describe("Include optimization recommendations (default: true)"),
+  includeHistory: z.boolean().optional().describe("Include performance history and trends (default: false)"),
+  timeRangeMs: z.number().optional().describe("Time range for trends in milliseconds (default: 1 hour)"),
+});
 
 // Initialize error detector
 const errorDetector = new ErrorDetector();
@@ -153,10 +161,144 @@ export const getScreenInfoHandler: ToolHandler = {
   }
 };
 
+/**
+ * Performance dashboard tool handler
+ */
+export const performanceDashboardHandler: ToolHandler = {
+  name: 'performance_dashboard',
+  description: 'Comprehensive performance monitoring dashboard that provides real-time system health status, performance metrics, bottleneck identification, and optimization recommendations. Returns detailed information about tool execution times, resource usage (CPU/memory), queue lengths, cache hit rates, OCR worker performance, and system alerts. Essential for monitoring server performance, identifying performance degradation, and optimizing automation workflows. Includes threshold violation alerts and actionable recommendations for improving performance. Use regularly to ensure optimal server operation and troubleshoot performance issues.',
+  schema: PerformanceDashboardToolSchema,
+  
+  async execute(args: any, context: ExecutionContext): Promise<ToolResult> {
+    try {
+      const performanceMonitor = getPerformanceMonitor();
+      
+      const includeMetrics = args.includeMetrics !== false;
+      const includeRecommendations = args.includeRecommendations !== false;
+      const includeHistory = args.includeHistory === true;
+      const timeRangeMs = args.timeRangeMs || 3600000; // 1 hour default
+      
+      // Get comprehensive dashboard data
+      const dashboardData = performanceMonitor.getDashboardData();
+      
+      // Prepare response object
+      const response: any = {
+        timestamp: Date.now(),
+        systemHealth: dashboardData.systemHealth,
+      };
+      
+      if (includeMetrics) {
+        response.metrics = {
+          tools: dashboardData.toolMetrics.map(tool => ({
+            name: tool.toolName,
+            executionCount: tool.successCount + tool.errorCount,
+            successCount: tool.successCount,
+            errorCount: tool.errorCount,
+            errorRate: tool.errorCount / (tool.successCount + tool.errorCount),
+            averageExecutionTime: Math.round(tool.averageExecutionTime),
+            p95ExecutionTime: Math.round(tool.p95ExecutionTime),
+            throughput: Math.round(tool.throughput * 100) / 100,
+            lastExecution: new Date(tool.lastExecution).toISOString()
+          })),
+          resources: dashboardData.resourceMetrics ? {
+            cpuUsage: Math.round(dashboardData.resourceMetrics.cpuUsagePercent * 100) / 100,
+            memoryUsage: Math.round(dashboardData.resourceMetrics.memoryUsagePercent * 100) / 100,
+            loadAverage: dashboardData.resourceMetrics.loadAverage.map(l => Math.round(l * 100) / 100),
+            gcStats: dashboardData.resourceMetrics.gcStats
+          } : null,
+          queues: dashboardData.queueMetrics.map(queue => ({
+            name: queue.name,
+            length: queue.length,
+            processingTime: Math.round(queue.processingTime),
+            waitTime: Math.round(queue.waitTime),
+            throughput: Math.round(queue.throughput * 100) / 100
+          })),
+          cache: dashboardData.cacheMetrics.map(cache => ({
+            name: cache.name,
+            hitCount: cache.hitCount,
+            missCount: cache.missCount,
+            hitRate: Math.round(cache.hitRate * 10000) / 100, // Percentage with 2 decimals
+            evictionCount: cache.evictionCount,
+            size: cache.size
+          })),
+          ocrWorkers: dashboardData.ocrMetrics.map(worker => ({
+            id: worker.workerId,
+            tasksCompleted: worker.tasksCompleted,
+            averageTaskTime: Math.round(worker.averageTaskTime),
+            errorCount: worker.errorCount,
+            isHealthy: worker.isHealthy
+          }))
+        };
+      }
+      
+      if (includeRecommendations) {
+        response.recommendations = dashboardData.recommendations;
+      }
+      
+      if (includeHistory) {
+        // Get performance trends for key metrics
+        const trends: Record<string, any> = {
+          cpuUsage: performanceMonitor.getPerformanceTrends('cpu_usage', timeRangeMs),
+          memoryUsage: performanceMonitor.getPerformanceTrends('memory_usage', timeRangeMs)
+        };
+        
+        // Add tool execution time trends for active tools
+        for (const tool of dashboardData.toolMetrics.slice(0, 5)) { // Top 5 tools
+          trends[`tool_${tool.toolName}`] = performanceMonitor.getPerformanceTrends(`tool_${tool.toolName}`, timeRangeMs);
+        }
+        
+        response.trends = trends;
+      }
+      
+      // Add summary statistics
+      response.summary = {
+        totalTools: dashboardData.toolMetrics.length,
+        totalExecutions: dashboardData.toolMetrics.reduce((sum, tool) => sum + tool.successCount + tool.errorCount, 0),
+        totalErrors: dashboardData.toolMetrics.reduce((sum, tool) => sum + tool.errorCount, 0),
+        overallErrorRate: (() => {
+          const totalOps = dashboardData.toolMetrics.reduce((sum, tool) => sum + tool.successCount + tool.errorCount, 0);
+          const totalErrs = dashboardData.toolMetrics.reduce((sum, tool) => sum + tool.errorCount, 0);
+          return totalOps > 0 ? Math.round((totalErrs / totalOps) * 10000) / 100 : 0;
+        })(),
+        uptime: dashboardData.systemHealth.uptime,
+        activeAlerts: dashboardData.systemHealth.alerts.length,
+        lastReport: dashboardData.lastReport ? {
+          timestamp: dashboardData.lastReport.timestamp,
+          metricsCount: Object.keys(dashboardData.lastReport.metrics).length,
+          recommendationsCount: dashboardData.lastReport.recommendations.length
+        } : null
+      };
+      
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(response, null, 2),
+        }],
+      };
+      
+    } catch (error) {
+      logger.error('Failed to generate performance dashboard', error as Error);
+      
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            error: "Performance monitoring not available",
+            message: error instanceof Error ? error.message : String(error),
+            timestamp: Date.now()
+          }, null, 2),
+        }],
+        isError: true,
+      };
+    }
+  }
+};
+
 // Export all handlers
 export const utilityToolHandlers: ToolHandler[] = [
   waitHandler,
   diagnosticHandler,
   checkForErrorsHandler,
   getScreenInfoHandler,
+  performanceDashboardHandler,
 ];

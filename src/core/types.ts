@@ -23,6 +23,7 @@ export interface ExecutionContext {
   getSharedResource<T>(key: string): T | undefined;
   shareScreenshot(screenshot: any, key?: string): void;
   getSharedScreenshot(key?: string): Promise<any>;
+  recordToolExecution?(toolName: string, duration: number, success: boolean): void;
 }
 
 export interface ToolHandler {

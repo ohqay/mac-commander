@@ -1,15 +1,20 @@
 import { createHash } from 'crypto';
 import { logger } from '../logger.js';
 import { CacheManager, TimedCache } from './types.js';
+import { getPerformanceMonitor } from './performance-monitor.js';
 
 /**
- * Implementation of a time-based cache with TTL support
+ * Implementation of a time-based cache with TTL support and performance tracking
  */
 class TimedCacheImpl<T> implements TimedCache<T> {
   private cache: Map<string, { value: T; expiry: number }> = new Map();
   private cleanupInterval: NodeJS.Timeout;
+  private hitCount = 0;
+  private missCount = 0;
+  private evictionCount = 0;
   
   constructor(
+    private cacheName: string,
     private defaultTTL: number = 5000,
     cleanupIntervalMs: number = 30000
   ) {
@@ -21,13 +26,22 @@ class TimedCacheImpl<T> implements TimedCache<T> {
   
   get(key: string): T | undefined {
     const entry = this.cache.get(key);
-    if (!entry) return undefined;
-    
-    if (Date.now() > entry.expiry) {
-      this.cache.delete(key);
+    if (!entry) {
+      this.missCount++;
+      this.updatePerformanceMetrics();
       return undefined;
     }
     
+    if (Date.now() > entry.expiry) {
+      this.cache.delete(key);
+      this.evictionCount++;
+      this.missCount++;
+      this.updatePerformanceMetrics();
+      return undefined;
+    }
+    
+    this.hitCount++;
+    this.updatePerformanceMetrics();
     return entry.value;
   }
   
@@ -40,7 +54,24 @@ class TimedCacheImpl<T> implements TimedCache<T> {
   }
   
   has(key: string): boolean {
-    return this.get(key) !== undefined;
+    const entry = this.cache.get(key);
+    if (!entry) {
+      this.missCount++;
+      this.updatePerformanceMetrics();
+      return false;
+    }
+    
+    if (Date.now() > entry.expiry) {
+      this.cache.delete(key);
+      this.evictionCount++;
+      this.missCount++;
+      this.updatePerformanceMetrics();
+      return false;
+    }
+    
+    this.hitCount++;
+    this.updatePerformanceMetrics();
+    return true;
   }
   
   delete(key: string): void {
@@ -53,16 +84,71 @@ class TimedCacheImpl<T> implements TimedCache<T> {
   
   private cleanup(): void {
     const now = Date.now();
+    let evicted = 0;
     for (const [key, entry] of this.cache.entries()) {
       if (now > entry.expiry) {
         this.cache.delete(key);
+        evicted++;
       }
+    }
+    if (evicted > 0) {
+      this.evictionCount += evicted;
+      this.updatePerformanceMetrics();
+      logger.debug(`Cache cleanup: evicted ${evicted} expired entries from ${this.cacheName}`);
     }
   }
   
   destroy(): void {
     clearInterval(this.cleanupInterval);
     this.clear();
+  }
+  
+  /**
+   * Get cache statistics
+   */
+  getStats(): {
+    hitCount: number;
+    missCount: number;
+    hitRate: number;
+    evictionCount: number;
+    size: number;
+  } {
+    const totalRequests = this.hitCount + this.missCount;
+    return {
+      hitCount: this.hitCount,
+      missCount: this.missCount,
+      hitRate: totalRequests > 0 ? this.hitCount / totalRequests : 0,
+      evictionCount: this.evictionCount,
+      size: this.cache.size
+    };
+  }
+  
+  /**
+   * Reset statistics
+   */
+  resetStats(): void {
+    this.hitCount = 0;
+    this.missCount = 0;
+    this.evictionCount = 0;
+  }
+  
+  /**
+   * Update performance metrics
+   */
+  private updatePerformanceMetrics(): void {
+    try {
+      const performanceMonitor = getPerformanceMonitor();
+      const stats = this.getStats();
+      performanceMonitor.recordCacheMetrics(
+        this.cacheName,
+        stats.hitCount,
+        stats.missCount,
+        stats.evictionCount,
+        stats.size
+      );
+    } catch (error) {
+      // Ignore errors if performance monitor is not available
+    }
   }
 }
 
@@ -77,14 +163,20 @@ export class CacheManagerImpl implements CacheManager {
   private windowCache: TimedCacheImpl<any>;
   private permissionCache: TimedCacheImpl<any>;
   
+  // Performance tracking
+  private performanceUpdateInterval: NodeJS.Timeout | null = null;
+  
   private constructor() {
     // Different TTLs for different types of data
-    this.screenshotCache = new TimedCacheImpl(5000); // 5 seconds
-    this.ocrCache = new TimedCacheImpl(30000); // 30 seconds
-    this.windowCache = new TimedCacheImpl(2000); // 2 seconds
-    this.permissionCache = new TimedCacheImpl(300000); // 5 minutes
+    this.screenshotCache = new TimedCacheImpl('screenshot', 5000); // 5 seconds
+    this.ocrCache = new TimedCacheImpl('ocr', 30000); // 30 seconds
+    this.windowCache = new TimedCacheImpl('window', 2000); // 2 seconds
+    this.permissionCache = new TimedCacheImpl('permission', 300000); // 5 minutes
     
-    logger.debug('CacheManager initialized with TTL-based caches');
+    // Start periodic performance reporting
+    this.startPerformanceReporting();
+    
+    logger.debug('CacheManager initialized with TTL-based caches and performance tracking');
   }
   
   static getInstance(): CacheManagerImpl {
@@ -156,7 +248,73 @@ export class CacheManagerImpl implements CacheManager {
     return `${region.x},${region.y},${region.width},${region.height}`;
   }
   
+  /**
+   * Get comprehensive cache statistics
+   */
+  getAllCacheStats(): {
+    screenshot: ReturnType<TimedCacheImpl<any>['getStats']>;
+    ocr: ReturnType<TimedCacheImpl<any>['getStats']>;
+    window: ReturnType<TimedCacheImpl<any>['getStats']>;
+    permission: ReturnType<TimedCacheImpl<any>['getStats']>;
+  } {
+    return {
+      screenshot: (this.screenshotCache as TimedCacheImpl<any>).getStats(),
+      ocr: (this.ocrCache as TimedCacheImpl<any>).getStats(),
+      window: (this.windowCache as TimedCacheImpl<any>).getStats(),
+      permission: (this.permissionCache as TimedCacheImpl<any>).getStats()
+    };
+  }
+  
+  /**
+   * Reset all cache statistics
+   */
+  resetAllStats(): void {
+    (this.screenshotCache as TimedCacheImpl<any>).resetStats();
+    (this.ocrCache as TimedCacheImpl<any>).resetStats();
+    (this.windowCache as TimedCacheImpl<any>).resetStats();
+    (this.permissionCache as TimedCacheImpl<any>).resetStats();
+    logger.debug('All cache statistics reset');
+  }
+  
+  /**
+   * Start periodic performance reporting
+   */
+  private startPerformanceReporting(): void {
+    // Report cache metrics every 30 seconds
+    this.performanceUpdateInterval = setInterval(() => {
+      this.reportPerformanceMetrics();
+    }, 30000);
+  }
+  
+  /**
+   * Report current cache metrics to performance monitor
+   */
+  private reportPerformanceMetrics(): void {
+    try {
+      const performanceMonitor = getPerformanceMonitor();
+      const allStats = this.getAllCacheStats();
+      
+      for (const [cacheName, stats] of Object.entries(allStats)) {
+        performanceMonitor.recordCacheMetrics(
+          cacheName,
+          stats.hitCount,
+          stats.missCount,
+          stats.evictionCount,
+          stats.size
+        );
+      }
+    } catch (error) {
+      // Ignore errors if performance monitor is not available
+      logger.debug('Performance monitor not available for cache metrics reporting');
+    }
+  }
+  
   destroy(): void {
+    if (this.performanceUpdateInterval) {
+      clearInterval(this.performanceUpdateInterval);
+      this.performanceUpdateInterval = null;
+    }
+    
     this.screenshotCache.destroy();
     this.ocrCache.destroy();
     this.windowCache.destroy();

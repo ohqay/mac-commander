@@ -1,6 +1,7 @@
 import { createWorker, Worker } from 'tesseract.js';
 import { logger } from '../logger.js';
 import { OCRError, TimeoutError } from '../errors.js';
+import { getPerformanceMonitor } from './performance-monitor.js';
 
 /**
  * Priority levels for OCR tasks
@@ -91,6 +92,7 @@ export class OCRWorkerPool {
   private totalTaskTime = 0;
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private scaleInterval: NodeJS.Timeout | null = null;
+  private performanceReportingInterval: NodeJS.Timeout | null = null;
 
   constructor(config: Partial<OCRWorkerPoolConfig> = {}) {
     this.config = {
@@ -141,6 +143,7 @@ export class OCRWorkerPool {
     this.startHealthChecking();
     this.startAutoScaling();
     this.startTaskProcessing();
+    this.startPerformanceReporting();
 
     logger.info('OCR worker pool initialized successfully', {
       workerCount: this.workers.size
@@ -166,6 +169,10 @@ export class OCRWorkerPool {
     if (this.scaleInterval) {
       clearInterval(this.scaleInterval);
       this.scaleInterval = null;
+    }
+    if (this.performanceReportingInterval) {
+      clearInterval(this.performanceReportingInterval);
+      this.performanceReportingInterval = null;
     }
 
     // Reject all queued tasks
@@ -456,6 +463,9 @@ export class OCRWorkerPool {
       
       this.completedTasks++;
       this.totalTaskTime += taskTime;
+      
+      // Report to performance monitor
+      this.reportWorkerMetrics(workerState);
 
       // Resolve the task
       task.resolve(result);
@@ -489,6 +499,9 @@ export class OCRWorkerPool {
         // Max retries reached, reject the task
         this.failedTasks++;
         task.reject(error as Error);
+        
+        // Report failed worker metrics
+        this.reportWorkerMetrics(workerState);
       }
 
       // Mark worker as potentially unhealthy if too many errors
@@ -615,6 +628,63 @@ export class OCRWorkerPool {
       }
 
     }, 5000); // Check every 5 seconds
+  }
+  
+  /**
+   * Start performance reporting
+   */
+  private startPerformanceReporting(): void {
+    // Report OCR metrics every 30 seconds
+    this.performanceReportingInterval = setInterval(() => {
+      this.reportAllWorkerMetrics();
+    }, 30000);
+  }
+  
+  /**
+   * Report metrics for a specific worker
+   */
+  private reportWorkerMetrics(workerState: WorkerState): void {
+    try {
+      const performanceMonitor = getPerformanceMonitor();
+      performanceMonitor.recordOCRWorkerMetrics(
+        workerState.id,
+        workerState.tasksCompleted,
+        workerState.averageTaskTime,
+        workerState.errorCount,
+        workerState.isHealthy
+      );
+    } catch (error) {
+      // Performance monitor might not be available
+      logger.debug('Could not report worker metrics', { 
+        workerId: workerState.id, 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  }
+  
+  /**
+   * Report metrics for all workers
+   */
+  private reportAllWorkerMetrics(): void {
+    for (const workerState of this.workers.values()) {
+      this.reportWorkerMetrics(workerState);
+    }
+    
+    // Also report overall pool metrics as a queue
+    try {
+      const performanceMonitor = getPerformanceMonitor();
+      const metrics = this.getMetrics();
+      
+      // Report as queue metrics
+      performanceMonitor.recordQueueMetrics(
+        'ocr_task_queue',
+        metrics.queuedTasks,
+        metrics.averageTaskTime,
+        0 // Wait time would need to be calculated differently
+      );
+    } catch (error) {
+      logger.debug('Could not report pool metrics', { error: error instanceof Error ? error.message : String(error) });
+    }
   }
 }
 

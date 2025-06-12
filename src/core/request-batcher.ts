@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import { ExecutionContext } from './types.js';
 import { ToolRegistry } from './tool-registry.js';
 import { logger } from '../logger.js';
+import { getPerformanceMonitor } from './performance-monitor.js';
 
 /**
  * Types for batch request system
@@ -170,6 +171,7 @@ export class RequestBatcher extends EventEmitter {
   private batchTimer: NodeJS.Timeout | null = null;
   private isProcessing = false;
   private readonly performanceTracker = new Map<string, number[]>();
+  private performanceReportingInterval: NodeJS.Timeout | null = null;
 
   constructor(config: Partial<BatchConfig> = {}) {
     super();
@@ -184,6 +186,9 @@ export class RequestBatcher extends EventEmitter {
     };
     
     this.toolRegistry = ToolRegistry.getInstance();
+    
+    // Start performance reporting
+    this.startPerformanceReporting();
     
     logger.debug('RequestBatcher initialized', { config: this.config });
   }
@@ -254,6 +259,7 @@ export class RequestBatcher extends EventEmitter {
     }
 
     this.isProcessing = true;
+    const processingStartTime = Date.now();
     
     try {
       // Extract batch from queue
@@ -261,10 +267,17 @@ export class RequestBatcher extends EventEmitter {
       const batchRequests = this.requestQueue.splice(0, batchSize);
       
       if (batchRequests.length > 0) {
+        // Record queue metrics before processing
+        const avgWaitTime = batchRequests.reduce((sum, req) => sum + (Date.now() - req.timestamp), 0) / batchRequests.length;
+        
         await this.executeBatch(batchRequests);
+        
+        // Record processing metrics
+        const processingTime = Date.now() - processingStartTime;
+        this.recordQueueMetrics('request_batch', this.requestQueue.length, processingTime, avgWaitTime);
       }
     } catch (error) {
-      logger.error('Error processing batch queue', { error });
+      logger.error('Error processing batch queue', error as Error);
     } finally {
       this.isProcessing = false;
       
@@ -322,7 +335,7 @@ export class RequestBatcher extends EventEmitter {
       logger.debug('Batch completed', metrics);
 
     } catch (error) {
-      logger.error('Batch execution failed', { batchId, error });
+      logger.error('Batch execution failed', error as Error, { batchId });
       
       // Reject all requests in the batch
       requests.forEach(request => {
@@ -428,14 +441,18 @@ export class RequestBatcher extends EventEmitter {
       // Execute the tool
       const toolResult = await handler.execute(request.args, context);
       const executionTime = Date.now() - startTime;
+      const success = !toolResult.isError;
 
       // Track performance
       this.trackPerformance(request.toolName, executionTime);
+      
+      // Record tool execution in context for performance monitoring
+      context.recordToolExecution?.(request.toolName, executionTime, success);
 
       const result: BatchResult = {
         id: request.id,
         toolName: request.toolName,
-        success: !toolResult.isError,
+        success,
         data: toolResult,
         executionTime
       };
@@ -443,7 +460,8 @@ export class RequestBatcher extends EventEmitter {
       logger.debug('Request executed successfully', { 
         requestId: request.id, 
         toolName: request.toolName, 
-        executionTime 
+        executionTime,
+        success
       });
 
       return result;
@@ -451,10 +469,9 @@ export class RequestBatcher extends EventEmitter {
     } catch (error) {
       const executionTime = Date.now() - startTime;
       
-      logger.error('Request execution failed', { 
+      logger.error('Request execution failed', error as Error, { 
         requestId: request.id, 
         toolName: request.toolName, 
-        error: error instanceof Error ? error.message : String(error),
         executionTime 
       });
 
@@ -621,6 +638,44 @@ export class RequestBatcher extends EventEmitter {
   }
 
   /**
+   * Record queue metrics
+   */
+  private recordQueueMetrics(queueName: string, length: number, processingTime: number, waitTime: number = 0): void {
+    try {
+      const performanceMonitor = getPerformanceMonitor();
+      performanceMonitor.recordQueueMetrics(queueName, length, processingTime, waitTime);
+    } catch (error) {
+      // Performance monitor might not be available
+      logger.debug('Could not record queue metrics', { queueName, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  
+  /**
+   * Start performance reporting
+   */
+  private startPerformanceReporting(): void {
+    // Report queue status every 30 seconds
+    this.performanceReportingInterval = setInterval(() => {
+      this.reportPerformanceMetrics();
+    }, 30000);
+  }
+  
+  /**
+   * Report current performance metrics
+   */
+  private reportPerformanceMetrics(): void {
+    const queueStatus = this.getQueueStatus();
+    
+    // Record current queue metrics
+    this.recordQueueMetrics(
+      'request_queue',
+      queueStatus.queueLength,
+      0, // No specific processing time for current state
+      queueStatus.oldestRequestAge
+    );
+  }
+  
+  /**
    * Cleanup resources
    */
   cleanup(): void {
@@ -629,6 +684,11 @@ export class RequestBatcher extends EventEmitter {
     this.performanceTracker.clear();
     this.activeBatches.clear();
     this.removeAllListeners();
+    
+    if (this.performanceReportingInterval) {
+      clearInterval(this.performanceReportingInterval);
+      this.performanceReportingInterval = null;
+    }
     
     logger.debug('RequestBatcher cleaned up');
   }
