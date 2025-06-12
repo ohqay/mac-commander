@@ -1,6 +1,7 @@
 import { Image } from "@nut-tree-fork/nut-js";
 import { promises as fs } from "fs";
 import { createCanvas, ImageData } from "canvas";
+import { Buffer } from "buffer";
 
 export async function imageToBase64(image: Image): Promise<string> {
   try {
@@ -80,4 +81,10 @@ export async function saveImage(image: Image, outputPath: string): Promise<void>
   } catch (error) {
     throw new Error(`Failed to save image: ${error}`);
   }
+}
+
+export function base64ToBuffer(base64: string): Buffer {
+  // Remove data URI prefix if present
+  const base64Data = base64.replace(/^data:image\/\w+;base64,/, '');
+  return Buffer.from(base64Data, 'base64');
 }

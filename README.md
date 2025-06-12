@@ -67,6 +67,7 @@ echo "$(pwd)/build/index.js"
 
 ## ✨ Features
 
+### Core Features
 - 📸 **Screenshot Capture**: Take full screen or region-specific screenshots with PNG export
 - 🖱️ **Mouse Control**: Click, double-click, and move the mouse cursor
 - ⌨️ **Keyboard Input**: Type text and press key combinations
@@ -74,6 +75,15 @@ echo "$(pwd)/build/index.js"
 - 🔍 **OCR Text Recognition**: Extract and find text on screen using Tesseract.js
 - ⚠️ **Error Detection**: Automatically detect error dialogs and messages using OCR
 - 📏 **Screen Information**: Get display dimensions and coordinates
+
+### Advanced Automation Features (New!)
+- 🎯 **Drag & Drop**: Smooth, customizable drag operations with duration control
+- 📜 **Advanced Scrolling**: Pixel-perfect and smooth scrolling in any direction
+- 🖱️ **Mouse Gestures**: Hover, click-and-hold, and relative mouse movements
+- ⌨️ **Human-like Typing**: Realistic typing with variable delays and optional typos
+- 🔄 **Complex Interactions**: Chain multiple actions for sophisticated automation
+- ⏱️ **Precise Timing**: Control duration and delays for natural interactions
+- 🎨 **Smooth Animations**: Easing functions for natural mouse movements
 
 ## 🛠️ Prerequisites
 
@@ -352,6 +362,70 @@ Parameters:
 - `text`: Text to search for
 - `region` (optional): Specific region to search in
 
+### drag_drop
+Drag from one point to another with customizable duration and smoothness.
+
+Parameters:
+- `startX`: Starting X coordinate
+- `startY`: Starting Y coordinate
+- `endX`: Ending X coordinate
+- `endY`: Ending Y coordinate
+- `duration`: Duration of the drag in milliseconds (default: 1000)
+- `smooth`: Whether to use smooth movement (default: true)
+- `button`: Mouse button to use for dragging (default: "left")
+
+### scroll
+Scroll in any direction by steps or pixels with optional smooth animation.
+
+Parameters:
+- `direction`: Direction to scroll ("up", "down", "left", "right")
+- `amount`: Amount to scroll (pixels for pixelScroll, steps for normal scroll)
+- `x` (optional): X coordinate to scroll at (defaults to current mouse position)
+- `y` (optional): Y coordinate to scroll at (defaults to current mouse position)
+- `smooth`: Whether to use smooth scrolling animation (default: false)
+- `pixelScroll`: Whether to scroll by pixels (true) or steps (false) (default: false)
+
+### hover
+Hover the mouse at a specific position for a duration.
+
+Parameters:
+- `x`: X coordinate to hover at
+- `y`: Y coordinate to hover at
+- `duration`: Duration to hover in milliseconds (default: 1000)
+
+### click_hold
+Click and hold a mouse button at specific coordinates for a duration.
+
+Parameters:
+- `x`: X coordinate to click and hold
+- `y`: Y coordinate to click and hold
+- `duration`: Duration to hold the click in milliseconds
+- `button`: Mouse button to hold (default: "left")
+
+### relative_mouse_move
+Move the mouse relative to its current position.
+
+Parameters:
+- `offsetX`: Relative X offset from current position
+- `offsetY`: Relative Y offset from current position
+- `smooth`: Whether to use smooth movement (default: true)
+
+### key_hold
+Hold a key or key combination for a specific duration.
+
+Parameters:
+- `key`: Key to hold (e.g., 'shift', 'cmd', 'a', 'cmd+shift')
+- `duration`: Duration to hold the key in milliseconds
+
+### type_with_delay
+Type text with realistic human-like delays between keystrokes.
+
+Parameters:
+- `text`: Text to type
+- `minDelay`: Minimum delay between keystrokes in milliseconds (default: 50)
+- `maxDelay`: Maximum delay between keystrokes in milliseconds (default: 150)
+- `mistakes`: Whether to simulate occasional typos (default: false)
+
 ## 🚀 Usage Examples
 
 ### 🎯 Basic Commands
@@ -416,6 +490,63 @@ Once configured, you can ask your AI assistant to:
 3. Press Tab to move to next field
 4. Type 'password123'
 5. Find and click the Submit button"
+```
+
+### 🚀 Advanced Automation Features
+
+**Drag and Drop Operations**:
+```
+"Drag the file from the desktop to the trash:
+1. Find the file icon at coordinates 100, 200
+2. Drag it smoothly to the trash at 800, 600 over 2 seconds
+3. Verify the file was moved"
+```
+
+**Natural Scrolling**:
+```
+"Scroll through the document naturally:
+1. Smooth scroll down by 500 pixels
+2. Wait 1 second
+3. Scroll to find the text 'Chapter 3'
+4. Hover over the heading for emphasis"
+```
+
+**Human-like Typing**:
+```
+"Type this email like a human would:
+1. Click the compose button
+2. Type the email address with realistic delays
+3. Press Tab to move to subject
+4. Type 'Meeting Tomorrow' with occasional pauses
+5. Tab to body and type the message with natural variations"
+```
+
+**Complex Mouse Gestures**:
+```
+"Perform a selection gesture:
+1. Move to the start of the text
+2. Click and hold the left mouse button
+3. Drag smoothly to select the paragraph
+4. Release after 2 seconds
+5. Copy the selection with cmd+c"
+```
+
+**Advanced Keyboard Shortcuts**:
+```
+"Use developer tools effectively:
+1. Hold cmd+shift for 500ms while pressing 'i' to open inspector
+2. Wait for tools to load
+3. Type 'console.log' in the console with human delays
+4. Press Enter to execute"
+```
+
+**Smooth Navigation**:
+```
+"Navigate the UI smoothly:
+1. Move mouse relatively by +200, +100 from current position
+2. Hover over the menu for 1 second
+3. Click and wait for dropdown
+4. Move down by 50 pixels and click the option"
 ```
 
 ## Development
