@@ -1,7 +1,7 @@
 import { Image } from "@nut-tree-fork/nut-js";
 import { promises as fs } from "fs";
 import { join, dirname, basename, extname } from "path";
-import os from "os";
+import { tmpdir } from "os";
 import { extractTextFromImage, getTextLocations, TextLocation } from "./ocr-utils.js";
 import { imageToBase64, base64ToBuffer } from "./image-utils.js";
 import { logger } from "./logger.js";
@@ -58,7 +58,7 @@ export class ScreenshotAnalyzer {
   private maxScreenshots: number;
 
   constructor(maxScreenshots: number = 50) {
-    this.tempDir = join(os.tmpdir(), 'mcp-screenshots');
+    this.tempDir = join(tmpdir(), 'mcp-screenshots');
     this.maxScreenshots = maxScreenshots;
     this.ensureTempDir();
   }

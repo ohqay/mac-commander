@@ -11,7 +11,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { mouse, screen, Region, Button, keyboard, Key, Point, getWindows, getActiveWindow, windowWithTitle } from "@nut-tree-fork/nut-js";
 import { promises as fs } from "fs";
-import { dirname, join, resolve } from "path";
+import { dirname, join } from "path";
 import { tmpdir } from "os";
 import { fileURLToPath } from "url";
 import { ErrorDetector, commonErrorPatterns } from "./error-detection.js";
@@ -1348,6 +1348,228 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               {
                 type: "text",
                 text: `Failed to cleanup screenshots: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      case "describe_screenshot": {
+        // Ensure screen recording permission
+        await ensurePermissions({ screenRecording: true });
+        
+        const screenshot = await screenCaptureBreaker.execute(
+          async () => {
+            logger.startTimer('describe_screenshot_capture');
+            try {
+              const result = await screen.grab();
+              if (!result) {
+                throw new ScreenCaptureError('Screenshot returned null');
+              }
+              return result;
+            } finally {
+              logger.endTimer('describe_screenshot_capture');
+            }
+          },
+          'describe_screenshot'
+        );
+        
+        try {
+          logger.startTimer('analyze_screenshot');
+          const analysis = await screenshotAnalyzer.analyzeScreenshot(screenshot);
+          logger.endTimer('analyze_screenshot');
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  success: true,
+                  analysis: {
+                    summary: analysis.summary,
+                    extractedText: args.includeOCR ? analysis.extractedText : 'OCR disabled',
+                    textLength: analysis.extractedText.length,
+                    detectedElements: args.detectElements ? analysis.detectedElements : [],
+                    clickableElements: analysis.detectedElements.filter(e => e.clickable).length,
+                    metadata: analysis.metadata
+                  }
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          logger.error('Screenshot analysis failed', error as Error);
+          throw new OCRError(`Screenshot analysis failed: ${error}`);
+        }
+      }
+
+      case "list_recent_screenshots": {
+        try {
+          const screenshots = await screenshotAnalyzer.listRecentScreenshots(args.limit || 10);
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  count: screenshots.length,
+                  screenshots: screenshots.map(s => ({
+                    filename: s.filename,
+                    timestamp: s.timestamp.toISOString(),
+                    size: s.size,
+                    dimensions: s.dimensions,
+                    format: s.format,
+                    hasOCRData: s.hasOCRData,
+                    textLength: s.textLength
+                  }))
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Failed to list recent screenshots: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      case "extract_text_from_screenshot": {
+        try {
+          // For now, return a message that this feature requires implementation
+          // In a full implementation, we'd need to load the image file and process it
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Text extraction from saved screenshot files is not yet fully implemented. Use 'extract_text' to extract text from live screen captures instead.",
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Failed to extract text from screenshot: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      case "find_ui_elements": {
+        // Ensure screen recording permission
+        await ensurePermissions({ screenRecording: true });
+        
+        let captureRegion: Region | undefined;
+        if (args.region) {
+          captureRegion = new Region(
+            args.region.x,
+            args.region.y,
+            args.region.width,
+            args.region.height
+          );
+        }
+        
+        const screenshot = await screenCaptureBreaker.execute(
+          async () => {
+            logger.startTimer('find_ui_elements_capture');
+            try {
+              const result = captureRegion 
+                ? await screen.grabRegion(captureRegion) 
+                : await screen.grab();
+              
+              if (!result) {
+                throw new ScreenCaptureError('Screenshot returned null');
+              }
+              
+              return result;
+            } finally {
+              logger.endTimer('find_ui_elements_capture');
+            }
+          },
+          'find_ui_elements'
+        );
+        
+        try {
+          logger.startTimer('analyze_ui_elements');
+          const analysis = await screenshotAnalyzer.analyzeScreenshot(screenshot);
+          logger.endTimer('analyze_ui_elements');
+          
+          // Filter by requested element types if specified
+          let filteredElements = analysis.detectedElements;
+          if (args.elementTypes && args.elementTypes.length > 0) {
+            filteredElements = analysis.detectedElements.filter(e => 
+              args.elementTypes!.includes(e.type)
+            );
+          }
+          
+          // Adjust coordinates if region was specified
+          if (captureRegion) {
+            filteredElements = filteredElements.map(element => ({
+              ...element,
+              x: element.x + captureRegion.left,
+              y: element.y + captureRegion.top
+            }));
+          }
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  success: true,
+                  region: args.region,
+                  totalElements: filteredElements.length,
+                  clickableElements: filteredElements.filter(e => e.clickable).length,
+                  elementTypes: [...new Set(filteredElements.map(e => e.type))],
+                  elements: filteredElements,
+                  metadata: args.autoSave ? analysis.metadata : undefined
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          logger.error('UI element detection failed', error as Error);
+          throw new OCRError(`UI element detection failed: ${error}`);
+        }
+      }
+
+      case "compare_screenshots": {
+        try {
+          const comparison = await screenshotAnalyzer.compareScreenshots(
+            args.filename1, 
+            args.filename2
+          );
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  file1: args.filename1,
+                  file2: args.filename2,
+                  similarity: comparison.similarity,
+                  differences: comparison.differences,
+                  summary: comparison.summary
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Failed to compare screenshots: ${error instanceof Error ? error.message : String(error)}`,
               },
             ],
             isError: true,
