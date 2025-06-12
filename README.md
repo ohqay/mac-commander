@@ -22,7 +22,7 @@ An MCP (Model Context Protocol) server that allows AI coding tools like **Claude
 
 ```bash
 # Clone and run the installer
-git clone https://github.com/your-username/macos-simulator-mcp.git
+git clone https://github.com/ohqay/macos-simulator-mcp.git
 cd macos-simulator-mcp
 ./install.sh
 ```
@@ -457,7 +457,7 @@ Once configured, you can ask your AI assistant to:
 If you're still having issues:
 1. **Run the test script**: `node test-server.js` to verify basic functionality
 2. **Check the console**: Look for error messages in your AI client
-3. **Open an issue**: [Create a GitHub issue](https://github.com/your-username/macos-simulator-mcp/issues) with:
+3. **Open an issue**: [Create a GitHub issue](https://github.com/ohqay/macos-simulator-mcp/issues) with:
    - Your macOS version
    - Your AI client (Claude Desktop, Cursor, etc.)
    - The exact error message
@@ -513,4 +513,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 **Made with ❤️ for the MCP community**
 
-*Having issues? [Open a GitHub issue](https://github.com/your-username/macos-simulator-mcp/issues) • Want to contribute? [Check our contributing guide](#-contributing)*
+*Having issues? [Open a GitHub issue](https://github.com/ohqay/macos-simulator-mcp/issues) • Want to contribute? [Check our contributing guide](#-contributing)*

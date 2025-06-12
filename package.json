@@ -26,6 +26,14 @@
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ohqay/macos-simulator-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ohqay/macos-simulator-mcp/issues"
+  },
+  "homepage": "https://github.com/ohqay/macos-simulator-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@nut-tree-fork/nut-js": "^4.2.6",
