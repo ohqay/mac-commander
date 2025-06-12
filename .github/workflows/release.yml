@@ -45,13 +45,13 @@ jobs:
         cp README.md dist/
         cp LICENSE dist/ || true
         cd dist
-        tar -czf ../macos-simulator-mcp-${{ github.ref_name }}.tar.gz .
+        tar -czf ../mac-commander-${{ github.ref_name }}.tar.gz .
         cd ..
     
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        files: macos-simulator-mcp-${{ github.ref_name }}.tar.gz
+        files: mac-commander-${{ github.ref_name }}.tar.gz
         draft: false
         prerelease: false
         generate_release_notes: true
@@ -61,14 +61,14 @@ jobs:
           ### Installation
           
           ```bash
-          npm install -g macos-simulator-mcp
+          npm install -g mac-commander
           ```
           
           Or download the attached archive and install locally:
           
           ```bash
-          tar -xzf macos-simulator-mcp-${{ github.ref_name }}.tar.gz
-          cd macos-simulator-mcp
+          tar -xzf mac-commander-${{ github.ref_name }}.tar.gz
+          cd mac-commander
           npm install -g .
           ```
           

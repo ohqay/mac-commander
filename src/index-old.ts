@@ -265,7 +265,7 @@ const tempScreenshotDir = join(tmpdir(), 'mcp-screenshots');
 // Create server instance
 const server = new Server(
   {
-    name: "macos-simulator-mcp",
+    name: "mac-commander",
     version: "0.1.0",
   },
   {

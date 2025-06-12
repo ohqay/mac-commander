@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "macos-simulator": {
-      "command": "node",
-      "args": ["/absolute/path/to/macos-simulator-mcp/build/index.js"],
-      "env": {}
-    }
-  }
-}

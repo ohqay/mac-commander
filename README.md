@@ -1,4 +1,4 @@
-# macOS Simulator MCP Server
+# mac Commander MCP Server
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
@@ -37,8 +37,8 @@ An MCP (Model Context Protocol) server that allows AI coding tools like **Claude
 
 ```bash
 # Clone and run the installer
-git clone https://github.com/ohqay/macos-simulator-mcp.git
-cd macos-simulator-mcp
+git clone https://github.com/ohqay/mac-commander.git
+cd mac-commander
 ./install.sh
 ```
 
@@ -52,8 +52,8 @@ The installer will:
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/your-username/macos-simulator-mcp.git
-cd macos-simulator-mcp
+git clone https://github.com/your-username/mac-commander.git
+cd mac-commander
 npm install && npm run build
 
 # 2. Get the full path for configuration
@@ -135,8 +135,8 @@ echo "$(pwd)/build/index.js"
 
 ```bash
 # Clone and run the installer
-git clone https://github.com/your-username/macos-simulator-mcp.git
-cd macos-simulator-mcp
+git clone https://github.com/your-username/mac-commander.git
+cd mac-commander
 ./install.sh
 ```
 
@@ -148,8 +148,8 @@ The installer script will guide you through everything!
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/macos-simulator-mcp.git
-cd macos-simulator-mcp
+git clone https://github.com/your-username/mac-commander.git
+cd mac-commander
 
 # Install dependencies and build
 npm install
@@ -163,7 +163,7 @@ npm run inspector
 
 ```bash
 # Install globally via npm (coming soon)
-npm install -g macos-simulator-mcp
+npm install -g mac-commander
 ```
 
 ### 🔧 Verify Installation
@@ -190,7 +190,7 @@ You should see the server start and respond to test commands.
   "mcpServers": {
     "macos-simulator": {
       "command": "node",
-      "args": ["/FULL/PATH/TO/macos-simulator-mcp/build/index.js"]
+      "args": ["/FULL/PATH/TO/mac-commander/build/index.js"]
     }
   }
 }
@@ -204,7 +204,7 @@ You should see the server start and respond to test commands.
   "mcpServers": {
     "macos-simulator": {
       "command": "node",
-      "args": ["/Users/yourname/Developer/macos-simulator-mcp/build/index.js"]
+      "args": ["/Users/yourname/Developer/mac-commander/build/index.js"]
     }
   }
 }
@@ -224,7 +224,7 @@ echo '{
   "mcpServers": {
     "macos-simulator": {
       "command": "node",
-      "args": ["/FULL/PATH/TO/macos-simulator-mcp/build/index.js"]
+      "args": ["/FULL/PATH/TO/mac-commander/build/index.js"]
     }
   }
 }' > .claude/config.json
@@ -243,7 +243,7 @@ claude
 3. **Add the configuration**:
    - **Name**: `macos-simulator`
    - **Command**: `node`
-   - **Args**: `/FULL/PATH/TO/macos-simulator-mcp/build/index.js`
+   - **Args**: `/FULL/PATH/TO/mac-commander/build/index.js`
 
 Or create `~/.cursor/mcp.json`:
 
@@ -252,7 +252,7 @@ Or create `~/.cursor/mcp.json`:
   "mcpServers": {
     "macos-simulator": {
       "command": "node",
-      "args": ["/FULL/PATH/TO/macos-simulator-mcp/build/index.js"]
+      "args": ["/FULL/PATH/TO/mac-commander/build/index.js"]
     }
   }
 }
@@ -266,7 +266,7 @@ Not sure what your full path is? Run this in the project directory:
 echo "$(pwd)/build/index.js"
 ```
 
-**Example output**: `/Users/yourname/Developer/macos-simulator-mcp/build/index.js`
+**Example output**: `/Users/yourname/Developer/mac-commander/build/index.js`
 
 Copy this exact path and use it in your configuration files above.
 
@@ -603,7 +603,7 @@ Once configured, you can ask your AI assistant to:
 If you're still having issues:
 1. **Run the test script**: `node test-server.js` to verify basic functionality
 2. **Check the console**: Look for error messages in your AI client
-3. **Open an issue**: [Create a GitHub issue](https://github.com/ohqay/macos-simulator-mcp/issues) with:
+3. **Open an issue**: [Create a GitHub issue](https://github.com/ohqay/mac-commander/issues) with:
    - Your macOS version
    - Your AI client (Claude Desktop, Cursor, etc.)
    - The exact error message
@@ -659,4 +659,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 **Made with ❤️ for the MCP community**
 
-*Having issues? [Open a GitHub issue](https://github.com/ohqay/macos-simulator-mcp/issues) • Want to contribute? [Check our contributing guide](#-contributing)*
+*Having issues? [Open a GitHub issue](https://github.com/ohqay/mac-commander/issues) • Want to contribute? [Check our contributing guide](#-contributing)*

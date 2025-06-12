@@ -33,7 +33,7 @@ export class Logger {
     this.logToFile = process.env.MCP_LOG_TO_FILE === 'true';
     
     // Set up log file path
-    const logDir = join(homedir(), '.macos-simulator-mcp', 'logs');
+    const logDir = join(homedir(), '.mac-commander', 'logs');
     if (this.logToFile && !existsSync(logDir)) {
       mkdirSync(logDir, { recursive: true });
     }

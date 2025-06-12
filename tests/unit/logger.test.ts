@@ -106,9 +106,9 @@ describe('logger', () => {
       const logger = Logger.getInstance();
       logger.info('test message');
       
-      expect(mkdirSync).toHaveBeenCalledWith('/home/test/.macos-simulator-mcp/logs', { recursive: true });
+      expect(mkdirSync).toHaveBeenCalledWith('/home/test/.mac-commander/logs', { recursive: true });
       expect(appendFileSync).toHaveBeenCalledWith(
-        expect.stringMatching(/\/home\/test\/\.macos-simulator-mcp\/logs\/mcp-.*\.log/),
+        expect.stringMatching(/\/home\/test\/\.mac-commander\/logs\/mcp-.*\.log/),
         expect.stringContaining('[INFO] test message\n')
       );
     });
@@ -260,7 +260,7 @@ describe('logger', () => {
       logger.info('test');
       
       expect(appendFileSync).toHaveBeenCalledWith(
-        expect.stringMatching(/\/home\/test\/\.macos-simulator-mcp\/logs\/mcp-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.log$/),
+        expect.stringMatching(/\/home\/test\/\.mac-commander\/logs\/mcp-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.log$/),
         expect.any(String)
       );
     });

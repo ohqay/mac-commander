@@ -476,7 +476,7 @@ class ConnectionTester {
     // Test the configuration format that would be used in Claude Desktop
     const configTest = {
       "mcpServers": {
-        "macos-simulator-mcp": {
+        "mac-commander": {
           "command": "node",
           "args": ["build/index.js"]
         }
@@ -485,8 +485,8 @@ class ConnectionTester {
 
     // Simulate how Claude Desktop would start the server
     return new Promise((resolve) => {
-      const server = spawn(configTest.mcpServers["macos-simulator-mcp"].command, 
-                           configTest.mcpServers["macos-simulator-mcp"].args, {
+      const server = spawn(configTest.mcpServers["mac-commander"].command, 
+                           configTest.mcpServers["mac-commander"].args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: __dirname
       });

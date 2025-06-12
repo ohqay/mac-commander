@@ -5,7 +5,7 @@ import { spawn } from 'child_process';
 
 console.log('🔍 Testing MCP Server Tool Discovery...\n');
 
-const server = spawn('node', ['/Users/tarek/development/creating-mcp/macos-simulator-mcp/build/index.js'], {
+const server = spawn('node', ['/Users/tarek/development/creating-mcp/mac-commander/build/index.js'], {
     stdio: ['pipe', 'pipe', 'pipe']
 });
 

@@ -1,11 +1,11 @@
 {
-  "name": "macos-simulator-mcp",
+  "name": "mac-commander",
   "version": "0.1.0",
   "description": "MCP server for interacting with macOS applications - screenshots, UI automation, and error detection",
   "private": true,
   "type": "module",
   "bin": {
-    "macos-simulator-mcp": "./build/index.js"
+    "mac-commander": "./build/index.js"
   },
   "files": [
     "build"
@@ -33,12 +33,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ohqay/macos-simulator-mcp.git"
+    "url": "https://github.com/ohqay/mac-commander.git"
   },
   "bugs": {
-    "url": "https://github.com/ohqay/macos-simulator-mcp/issues"
+    "url": "https://github.com/ohqay/mac-commander/issues"
   },
-  "homepage": "https://github.com/ohqay/macos-simulator-mcp#readme",
+  "homepage": "https://github.com/ohqay/mac-commander#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@nut-tree-fork/nut-js": "^4.2.6",
