@@ -113,9 +113,18 @@ export class ErrorDetector {
     description: string;
   }> {
     try {
+      console.log('Capturing error context', { 
+        pattern: error.pattern.name,
+        hasLocation: !!error.location 
+      });
+      
       const screenshot = error.location 
         ? await screen.grabRegion(error.location)
         : await screen.grab();
+      
+      if (!screenshot) {
+        throw new Error('Failed to capture error context screenshot');
+      }
       
       return {
         screenshot,
@@ -123,6 +132,7 @@ export class ErrorDetector {
         description: `${error.pattern.name}: ${error.pattern.description}`,
       };
     } catch (e) {
+      console.error('Failed to capture error context', e);
       return {
         screenshot: null,
         timestamp: new Date(),

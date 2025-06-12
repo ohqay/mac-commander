@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+  
+  release:
+    needs: test
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        registry-url: 'https://registry.npmjs.org'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Build project
+      run: npm run build
+    
+    - name: Run tests
+      run: npm run test:run
+    
+    - name: Create release archive
+      run: |
+        mkdir -p dist
+        cp -r build dist/
+        cp package.json dist/
+        cp package-lock.json dist/
+        cp README.md dist/
+        cp LICENSE dist/ || true
+        cd dist
+        tar -czf ../macos-simulator-mcp-${{ github.ref_name }}.tar.gz .
+        cd ..
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: macos-simulator-mcp-${{ github.ref_name }}.tar.gz
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        body: |
+          ## macOS Simulator MCP ${{ github.ref_name }}
+          
+          ### Installation
+          
+          ```bash
+          npm install -g macos-simulator-mcp
+          ```
+          
+          Or download the attached archive and install locally:
+          
+          ```bash
+          tar -xzf macos-simulator-mcp-${{ github.ref_name }}.tar.gz
+          cd macos-simulator-mcp
+          npm install -g .
+          ```
+          
+          ### What's Changed
+          
+          See the auto-generated release notes below for a full list of changes.
+    
+    - name: Publish to npm
+      if: ${{ !contains(github.ref_name, '-') }} # Don't publish pre-releases
+      run: npm publish
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
