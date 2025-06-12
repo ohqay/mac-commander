@@ -5,6 +5,13 @@ import '../mocks/tesseract.mock';
 import { mockScreen, Region } from '../mocks/nut-js.mock';
 import { mockWorker } from '../mocks/tesseract.mock';
 
+// Mock fs module at the top level
+vi.mock('fs', () => ({
+  promises: {
+    writeFile: vi.fn().mockResolvedValue(undefined)
+  }
+}));
+
 // Import the actual modules to test integration
 import { imageToBase64, saveImage } from '../../src/image-utils';
 import { extractTextFromImage, getTextLocations, initializeOCR, terminateOCR } from '../../src/ocr-utils';
@@ -39,7 +46,7 @@ describe('Screenshot → OCR → Error Detection Workflow', () => {
     expect(base64Image).toBe('data:image/png;base64,mockBase64String');
 
     // Step 3: Extract text using OCR
-    mockWorker.recognize.mockResolvedValueOnce({
+    const mockOCRData = {
       data: {
         text: 'Error: Application crashed unexpectedly. Click OK to close.',
         words: [
@@ -65,7 +72,12 @@ describe('Screenshot → OCR → Error Detection Workflow', () => {
           },
         ],
       },
-    });
+    };
+    
+    // Set up mock for both extractTextFromImage and getTextLocations calls
+    mockWorker.recognize
+      .mockResolvedValueOnce(mockOCRData)
+      .mockResolvedValueOnce(mockOCRData);
 
     await initializeOCR();
     const extractedText = await extractTextFromImage(screenshot);
@@ -78,33 +90,31 @@ describe('Screenshot → OCR → Error Detection Workflow', () => {
 
     // Step 5: Detect errors
     const errorDetector = new ErrorDetector();
-    vi.mocked(errorDetector.detectErrors).mockImplementation(async () => {
-      // Simulate error detection based on the OCR text
-      return [
-        {
-          pattern: {
-            name: 'crash_dialog',
-            description: 'Application crash or unexpected quit dialog',
-            patterns: ['crashed', 'quit unexpectedly'],
-            severity: 'error' as const,
-          },
-          location: new Region(260, 200, 60, 20),
-          confidence: 90,
-          timestamp: new Date(),
+    const mockDetectErrors = vi.fn().mockResolvedValue([
+      {
+        pattern: {
+          name: 'crash_dialog',
+          description: 'Application crash or unexpected quit dialog',
+          patterns: ['crashed', 'quit unexpectedly'],
+          severity: 'error' as const,
         },
-        {
-          pattern: {
-            name: 'modal_dialog',
-            description: 'Modal dialog boxes that might contain errors',
-            patterns: ['OK', 'Cancel'],
-            severity: 'warning' as const,
-          },
-          location: new Region(350, 250, 30, 20),
-          confidence: 98,
-          timestamp: new Date(),
+        location: new Region(260, 200, 60, 20),
+        confidence: 90,
+        timestamp: new Date(),
+      },
+      {
+        pattern: {
+          name: 'modal_dialog',
+          description: 'Modal dialog boxes that might contain errors',
+          patterns: ['OK', 'Cancel'],
+          severity: 'warning' as const,
         },
-      ];
-    });
+        location: new Region(350, 250, 30, 20),
+        confidence: 98,
+        timestamp: new Date(),
+      },
+    ]);
+    errorDetector.detectErrors = mockDetectErrors;
 
     const errors = await errorDetector.detectErrors();
     expect(errors).toHaveLength(2);
@@ -227,6 +237,6 @@ describe('Screenshot → OCR → Error Detection Workflow', () => {
     mockWorker.recognize.mockRejectedValueOnce(new Error('OCR engine failed'));
 
     await initializeOCR();
-    await expect(extractTextFromImage(mockImage)).rejects.toThrow('OCR failed: OCR engine failed');
+    await expect(extractTextFromImage(mockImage)).rejects.toThrow('Text extraction failed: OCR engine failed');
   });
 });

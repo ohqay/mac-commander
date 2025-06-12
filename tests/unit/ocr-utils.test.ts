@@ -1,4 +1,57 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Mock tesseract.js module first
+vi.mock('tesseract.js', async () => {
+  const mockWorker = {
+    terminate: vi.fn().mockResolvedValue(undefined),
+    recognize: vi.fn().mockResolvedValue({
+      data: {
+        text: 'Mock OCR text',
+        words: [
+          {
+            text: 'Mock',
+            bbox: { x0: 10, y0: 10, x1: 50, y1: 30 },
+            confidence: 95,
+          },
+          {
+            text: 'OCR',
+            bbox: { x0: 60, y0: 10, x1: 90, y1: 30 },
+            confidence: 92,
+          },
+          {
+            text: 'text',
+            bbox: { x0: 100, y0: 10, x1: 140, y1: 30 },
+            confidence: 88,
+          },
+        ],
+      },
+    }),
+    load: vi.fn().mockResolvedValue(undefined),
+    loadLanguage: vi.fn().mockResolvedValue(undefined),
+    initialize: vi.fn().mockResolvedValue(undefined),
+    setParameters: vi.fn().mockResolvedValue(undefined),
+  };
+
+  const createWorker = vi.fn().mockImplementation(async (language?: string) => {
+    await mockWorker.load();
+    await mockWorker.loadLanguage(language || 'eng');
+    await mockWorker.initialize(language || 'eng');
+    return mockWorker;
+  });
+
+  return {
+    createWorker,
+    Worker: vi.fn().mockImplementation(() => mockWorker),
+    mockWorker, // Export for test access
+  };
+});
+
+// Mock image-utils module
+vi.mock('../../src/image-utils', () => ({
+  imageToBase64: vi.fn().mockResolvedValue('data:image/png;base64,mockBase64String'),
+}));
+
+// Import the modules after mocking
 import {
   initializeOCR,
   terminateOCR,
@@ -6,13 +59,12 @@ import {
   findTextInImage,
   getTextLocations,
 } from '../../src/ocr-utils';
-import '../mocks/tesseract.mock';
-import '../mocks/canvas.mock';
-import { createWorker, mockWorker } from '../mocks/tesseract.mock';
+import { createWorker } from 'tesseract.js';
 
-vi.mock('../../src/image-utils', () => ({
-  imageToBase64: vi.fn().mockResolvedValue('data:image/png;base64,mockBase64String'),
-}));
+// Get the mocked functions for assertions
+const mockTesseract = await vi.importMock<any>('tesseract.js');
+const mockWorker = mockTesseract.mockWorker;
+const mockCreateWorker = mockTesseract.createWorker;
 
 describe('ocr-utils', () => {
   beforeEach(() => {
@@ -26,13 +78,13 @@ describe('ocr-utils', () => {
   describe('initializeOCR', () => {
     it('should create a worker if not already initialized', async () => {
       await initializeOCR();
-      expect(createWorker).toHaveBeenCalledWith('eng');
+      expect(mockCreateWorker).toHaveBeenCalledWith('eng');
     });
 
     it('should not create multiple workers', async () => {
       await initializeOCR();
       await initializeOCR();
-      expect(createWorker).toHaveBeenCalledTimes(1);
+      expect(mockCreateWorker).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -61,7 +113,7 @@ describe('ocr-utils', () => {
       const result = await extractTextFromImage(mockImage as any);
 
       expect(result).toBe('Mock OCR text');
-      expect(createWorker).toHaveBeenCalled();
+      expect(mockCreateWorker).toHaveBeenCalled();
       expect(mockWorker.recognize).toHaveBeenCalledWith('data:image/png;base64,mockBase64String');
     });
 
@@ -93,7 +145,7 @@ describe('ocr-utils', () => {
         data: new Uint8Array(100 * 100 * 3),
       };
 
-      await expect(extractTextFromImage(mockImage as any)).rejects.toThrow('OCR failed: OCR failed');
+      await expect(extractTextFromImage(mockImage as any)).rejects.toThrow('Text extraction failed: OCR failed');
     });
   });
 

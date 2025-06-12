@@ -1,6 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { imageToBase64, saveImage } from '../../src/image-utils';
-import '../mocks/canvas.mock';
 import { promises as fs } from 'fs';
 
 vi.mock('fs', () => ({
@@ -8,6 +6,39 @@ vi.mock('fs', () => ({
     writeFile: vi.fn().mockResolvedValue(undefined),
   },
 }));
+
+// Mock Canvas directly in the test file
+vi.mock('canvas', () => {
+  class MockImageData {
+    data: Uint8Array;
+    width: number;
+    height: number;
+
+    constructor(width: number, height: number) {
+      this.width = width;
+      this.height = height;
+      this.data = new Uint8Array(width * height * 4);
+    }
+  }
+
+  const mockContext = {
+    createImageData: vi.fn((width: number, height: number) => new MockImageData(width, height)),
+    putImageData: vi.fn(),
+  };
+
+  const mockCanvas = {
+    getContext: vi.fn().mockReturnValue(mockContext),
+    toDataURL: vi.fn().mockReturnValue('data:image/png;base64,mockBase64String'),
+    toBuffer: vi.fn().mockReturnValue(Buffer.from('mock-png-data')),
+  };
+
+  return {
+    createCanvas: vi.fn().mockReturnValue(mockCanvas),
+    ImageData: MockImageData,
+  };
+});
+
+import { imageToBase64, saveImage } from '../../src/image-utils';
 
 describe('image-utils', () => {
   beforeEach(() => {

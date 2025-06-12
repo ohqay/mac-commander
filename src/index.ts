@@ -196,6 +196,37 @@ const FindTextToolSchema = z.object({
   }).optional().describe("Specific region to search in. If not provided, searches entire screen"),
 });
 
+// Screenshot analysis tool schemas
+const DescribeScreenshotToolSchema = z.object({
+  autoSave: z.boolean().default(true).describe("Whether to save the screenshot for later analysis (default: true)"),
+  includeOCR: z.boolean().default(true).describe("Whether to extract text using OCR (default: true)"),
+  detectElements: z.boolean().default(true).describe("Whether to detect UI elements (default: true)"),
+});
+
+const ListRecentScreenshotsToolSchema = z.object({
+  limit: z.number().default(10).describe("Maximum number of recent screenshots to list (default: 10)"),
+});
+
+const ExtractTextFromScreenshotToolSchema = z.object({
+  filename: z.string().describe("Filename of the saved screenshot to extract text from"),
+});
+
+const FindUIElementsToolSchema = z.object({
+  autoSave: z.boolean().default(true).describe("Whether to save the screenshot (default: true)"),
+  elementTypes: z.array(z.enum(['button', 'text_field', 'link', 'image', 'icon', 'dialog', 'menu', 'window', 'other'])).optional().describe("Specific UI element types to look for. If not provided, detects all types"),
+  region: z.object({
+    x: z.number().describe("X coordinate of the region"),
+    y: z.number().describe("Y coordinate of the region"),
+    width: z.number().describe("Width of the region"),
+    height: z.number().describe("Height of the region"),
+  }).optional().describe("Specific region to analyze. If not provided, analyzes entire screen"),
+});
+
+const CompareScreenshotsToolSchema = z.object({
+  filename1: z.string().describe("Filename of the first screenshot to compare"),
+  filename2: z.string().describe("Filename of the second screenshot to compare"),
+});
+
 // Create server instance
 const server = new Server(
   {
@@ -439,6 +470,31 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         name: "cleanup_screenshots",
         description: "Clean up old screenshots from temporary folder",
         inputSchema: zodToJsonSchema(CleanupScreenshotsToolSchema),
+      },
+      {
+        name: "describe_screenshot",
+        description: "Capture and comprehensively analyze a screenshot with AI-powered insights. Combines screen capture with OCR text extraction, UI element detection, and intelligent content analysis. Automatically saves screenshots for later reference and provides detailed descriptions of visual content, detected UI elements (buttons, links, dialogs, etc.), and actionable insights. Perfect for understanding screen content, documenting UI states, debugging interface issues, and enabling AI to comprehend visual context. Returns structured analysis including extracted text, clickable elements, element positions, and human-readable summary of screen contents.",
+        inputSchema: zodToJsonSchema(DescribeScreenshotToolSchema),
+      },
+      {
+        name: "list_recent_screenshots",
+        description: "List recently captured and saved screenshots with metadata including timestamps, file sizes, and basic information. Essential for accessing previously captured screenshots for comparison, analysis, or review. Returns chronologically sorted list of screenshot files with details like filename, capture time, file size, and dimensions when available. Use this to find specific screenshots by timestamp or to see what visual data is available for analysis. Commonly used before view_screenshot or extract_text_from_screenshot operations.",
+        inputSchema: zodToJsonSchema(ListRecentScreenshotsToolSchema),
+      },
+      {
+        name: "extract_text_from_screenshot", 
+        description: "Extract text content from a previously saved screenshot file using advanced OCR (Optical Character Recognition). Perfect for retrieving text from screenshots taken earlier without needing to recapture the screen. Useful for analyzing text content from past screen states, extracting data from images, or processing visual text for further analysis. Use list_recent_screenshots first to find available screenshot files. Returns extracted text content with confidence levels and positioning information.",
+        inputSchema: zodToJsonSchema(ExtractTextFromScreenshotToolSchema),
+      },
+      {
+        name: "find_ui_elements",
+        description: "Capture a screenshot and intelligently detect and analyze UI elements including buttons, text fields, links, dialogs, menus, and other interactive components. Uses AI-powered element detection to identify clickable elements, determine their purposes, and provide precise coordinates for automation. Essential for understanding interface layouts, finding interactive elements, and planning automation workflows. Returns detailed information about each detected element including type, position, text content, clickability, and descriptive analysis. Perfect for dynamic UI exploration and automation planning.",
+        inputSchema: zodToJsonSchema(FindUIElementsToolSchema),
+      },
+      {
+        name: "compare_screenshots",
+        description: "Compare two previously saved screenshots to identify differences, changes, or similarities between screen states. Useful for detecting UI changes, verifying automation results, monitoring application state changes, or debugging interface issues. Provides similarity metrics and identifies key differences between the compared images. Use list_recent_screenshots to find available screenshots for comparison. Returns detailed comparison results including similarity percentage and description of detected differences.",
+        inputSchema: zodToJsonSchema(CompareScreenshotsToolSchema),
       },
     ],
   };

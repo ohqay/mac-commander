@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 
+// Mock worker instance that simulates Tesseract.js worker
 export const mockWorker = {
   terminate: vi.fn().mockResolvedValue(undefined),
   recognize: vi.fn().mockResolvedValue({
@@ -24,11 +25,23 @@ export const mockWorker = {
       ],
     },
   }),
+  load: vi.fn().mockResolvedValue(undefined),
+  loadLanguage: vi.fn().mockResolvedValue(undefined),
+  initialize: vi.fn().mockResolvedValue(undefined),
+  setParameters: vi.fn().mockResolvedValue(undefined),
 };
 
-export const createWorker = vi.fn().mockResolvedValue(mockWorker);
+// Mock createWorker function
+export const createWorker = vi.fn().mockImplementation(async (language?: string) => {
+  // Simulate the initialization process
+  await mockWorker.load();
+  await mockWorker.loadLanguage(language || 'eng');
+  await mockWorker.initialize(language || 'eng');
+  return mockWorker;
+});
 
+// Mock the entire tesseract.js module - hoisted to top level
 vi.mock('tesseract.js', () => ({
   createWorker,
-  Worker: vi.fn(),
+  Worker: vi.fn().mockImplementation(() => mockWorker),
 }));
