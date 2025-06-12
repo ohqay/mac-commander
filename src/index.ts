@@ -15,10 +15,6 @@ import { fileURLToPath } from "url";
 import { ErrorDetector, commonErrorPatterns } from "./error-detection.js";
 import { imageToBase64, saveImage } from "./image-utils.js";
 import { extractTextFromImage, getTextLocations, terminateOCR } from "./ocr-utils.js";
-import { elementDetector, ElementType } from "./element-detection.js";
-import { performanceMonitor } from "./performance-monitor.js";
-import { enhancedOCR } from "./ocr-enhanced.js";
-import { ocrCache } from "./ocr-cache.js";
 import { logger } from "./logger.js";
 import { 
   MCPError, 
@@ -143,96 +139,6 @@ const FindTextToolSchema = z.object({
   }).optional().describe("Specific region to search in. If not provided, searches entire screen"),
 });
 
-const DragDropToolSchema = z.object({
-  startX: z.number().describe("Starting X coordinate"),
-  startY: z.number().describe("Starting Y coordinate"),
-  endX: z.number().describe("Ending X coordinate"),
-  endY: z.number().describe("Ending Y coordinate"),
-  duration: z.number().optional().default(1000).describe("Duration of the drag in milliseconds"),
-  smooth: z.boolean().optional().default(true).describe("Whether to use smooth movement"),
-  button: z.enum(["left", "right", "middle"]).default("left").describe("Mouse button to use for dragging"),
-});
-
-const ScrollToolSchema = z.object({
-  direction: z.enum(["up", "down", "left", "right"]).describe("Direction to scroll"),
-  amount: z.number().describe("Amount to scroll (pixels for pixelScroll, steps for normal scroll)"),
-  x: z.number().optional().describe("X coordinate to scroll at (defaults to current mouse position)"),
-  y: z.number().optional().describe("Y coordinate to scroll at (defaults to current mouse position)"),
-  smooth: z.boolean().optional().default(false).describe("Whether to use smooth scrolling animation"),
-  pixelScroll: z.boolean().optional().default(false).describe("Whether to scroll by pixels (true) or steps (false)"),
-});
-
-const HoverToolSchema = z.object({
-  x: z.number().describe("X coordinate to hover at"),
-  y: z.number().describe("Y coordinate to hover at"),
-  duration: z.number().optional().default(1000).describe("Duration to hover in milliseconds"),
-});
-
-const ClickHoldToolSchema = z.object({
-  x: z.number().describe("X coordinate to click and hold"),
-  y: z.number().describe("Y coordinate to click and hold"),
-  duration: z.number().describe("Duration to hold the click in milliseconds"),
-  button: z.enum(["left", "right", "middle"]).default("left").describe("Mouse button to hold"),
-});
-
-const RelativeMouseMoveToolSchema = z.object({
-  offsetX: z.number().describe("Relative X offset from current position"),
-  offsetY: z.number().describe("Relative Y offset from current position"),
-  smooth: z.boolean().optional().default(true).describe("Whether to use smooth movement"),
-});
-
-const KeyHoldToolSchema = z.object({
-  key: z.string().describe("Key to hold (e.g., 'shift', 'cmd', 'a')"),
-  duration: z.number().describe("Duration to hold the key in milliseconds"),
-});
-
-const TypeWithDelayToolSchema = z.object({
-  text: z.string().describe("Text to type"),
-  minDelay: z.number().optional().default(50).describe("Minimum delay between keystrokes in milliseconds"),
-  maxDelay: z.number().optional().default(150).describe("Maximum delay between keystrokes in milliseconds"),
-  mistakes: z.boolean().optional().default(false).describe("Whether to simulate occasional typos"),
-});
-
-const FindElementToolSchema = z.object({
-  text: z.string().optional().describe("Text content to search for in the element"),
-  elementType: z.enum(["button", "text_field", "checkbox", "radio_button", "dropdown", "link", "label", "image", "menu_item", "tab", "switch", "slider"]).optional().describe("Type of element to find"),
-  region: z.object({
-    x: z.number().describe("X coordinate of the region"),
-    y: z.number().describe("Y coordinate of the region"),
-    width: z.number().describe("Width of the region"),
-    height: z.number().describe("Height of the region"),
-  }).optional().describe("Specific region to search in. If not provided, searches entire screen"),
-});
-
-const WaitForElementToolSchema = z.object({
-  text: z.string().describe("Text content to wait for"),
-  timeout: z.number().optional().default(30000).describe("Maximum time to wait in milliseconds"),
-  checkInterval: z.number().optional().default(1000).describe("How often to check for the element in milliseconds"),
-  region: z.object({
-    x: z.number().describe("X coordinate of the region"),
-    y: z.number().describe("Y coordinate of the region"),
-    width: z.number().describe("Width of the region"),
-    height: z.number().describe("Height of the region"),
-  }).optional().describe("Specific region to search in. If not provided, searches entire screen"),
-});
-
-const GetPerformanceStatsToolSchema = z.object({
-  operation: z.string().optional().describe("Specific operation to get stats for. If not provided, returns all stats"),
-});
-
-const ConfigureOCRToolSchema = z.object({
-  language: z.string().optional().describe("OCR language to use (e.g., 'eng', 'fra', 'deu')"),
-  confidenceThreshold: z.number().optional().describe("Minimum confidence threshold for OCR (0-100)"),
-  preprocessing: z.object({
-    contrast: z.boolean().optional(),
-    sharpen: z.boolean().optional(),
-    denoise: z.boolean().optional(),
-    threshold: z.number().optional(),
-  }).optional().describe("Image preprocessing options for better OCR accuracy"),
-  cacheEnabled: z.boolean().optional().describe("Enable or disable OCR caching"),
-  cacheTTL: z.number().optional().describe("Cache time-to-live in milliseconds"),
-});
-
 // Create server instance
 const server = new Server(
   {
@@ -258,28 +164,8 @@ function getMouseButton(button: string): Button {
   }
 }
 
-// Helper function to generate smooth path between two points
-function generateSmoothPath(start: Point, end: Point, steps: number = 10): Point[] {
-  const path: Point[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    // Using easing function for more natural movement
-    const easedT = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-    path.push(new Point(
-      Math.round(start.x + (end.x - start.x) * easedT),
-      Math.round(start.y + (end.y - start.y) * easedT)
-    ));
-  }
-  return path;
-}
-
-// Helper function to generate random delay
-function getRandomDelay(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-// Helper function to parse key string to Key enum or string
-function parseKeyString(keyString: string): { modifiers: Key[], mainKey: Key | string | undefined } {
+// Helper function to parse key combinations
+async function pressKeys(keyString: string) {
   const keys = keyString.toLowerCase().split("+");
   const modifiers: Key[] = [];
   let mainKey: Key | string | undefined;
@@ -336,13 +222,6 @@ function parseKeyString(keyString: string): { modifiers: Key[], mainKey: Key | s
     }
   }
 
-  return { modifiers, mainKey };
-}
-
-// Helper function to press key combinations
-async function pressKeys(keyString: string) {
-  const { modifiers, mainKey } = parseKeyString(keyString);
-
   if (modifiers.length > 0 && mainKey) {
     if (typeof mainKey === "string" && mainKey.length === 1) {
       await keyboard.type(mainKey);
@@ -358,33 +237,6 @@ async function pressKeys(keyString: string) {
       await keyboard.releaseKey(mainKey);
     }
   }
-}
-
-// Helper function to hold key combinations
-async function holdKeys(keyString: string): Promise<() => Promise<void>> {
-  const { modifiers, mainKey } = parseKeyString(keyString);
-  const allKeys = [...modifiers];
-  
-  if (mainKey && typeof mainKey !== "string") {
-    allKeys.push(mainKey);
-  }
-  
-  if (allKeys.length > 0) {
-    await keyboard.pressKey(...allKeys);
-    
-    // Return release function
-    return async () => {
-      await keyboard.releaseKey(...allKeys);
-    };
-  } else if (mainKey && typeof mainKey === "string") {
-    // For single character keys, we'll simulate holding by rapid typing
-    const interval = setInterval(() => keyboard.type(mainKey), 50);
-    return async () => {
-      clearInterval(interval);
-    };
-  }
-  
-  return async () => {}; // No-op if no valid keys
 }
 
 // Tool handlers
@@ -471,61 +323,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description: "Find specific text on the screen and get its location",
         inputSchema: FindTextToolSchema,
       },
-      {
-        name: "drag_drop",
-        description: "Drag from one point to another with customizable duration and smoothness",
-        inputSchema: DragDropToolSchema,
-      },
-      {
-        name: "scroll",
-        description: "Scroll in any direction by steps or pixels with optional smooth animation",
-        inputSchema: ScrollToolSchema,
-      },
-      {
-        name: "hover",
-        description: "Hover the mouse at a specific position for a duration",
-        inputSchema: HoverToolSchema,
-      },
-      {
-        name: "click_hold",
-        description: "Click and hold a mouse button at specific coordinates for a duration",
-        inputSchema: ClickHoldToolSchema,
-      },
-      {
-        name: "relative_mouse_move",
-        description: "Move the mouse relative to its current position",
-        inputSchema: RelativeMouseMoveToolSchema,
-      },
-      {
-        name: "key_hold",
-        description: "Hold a key or key combination for a specific duration",
-        inputSchema: KeyHoldToolSchema,
-      },
-      {
-        name: "type_with_delay",
-        description: "Type text with realistic human-like delays between keystrokes",
-        inputSchema: TypeWithDelayToolSchema,
-      },
-      {
-        name: "find_element",
-        description: "Find UI elements on screen by text or type (button, text field, checkbox, etc.)",
-        inputSchema: FindElementToolSchema,
-      },
-      {
-        name: "wait_for_element",
-        description: "Wait for a UI element with specific text to appear on screen",
-        inputSchema: WaitForElementToolSchema,
-      },
-      {
-        name: "get_performance_stats",
-        description: "Get performance statistics for MCP operations",
-        inputSchema: GetPerformanceStatsToolSchema,
-      },
-      {
-        name: "configure_ocr",
-        description: "Configure OCR settings for better accuracy and performance",
-        inputSchema: ConfigureOCRToolSchema,
-      },
     ],
   };
 });
@@ -555,6 +352,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ],
         };
       }
+
       case "screenshot": {
         // Ensure screen recording permission
         await ensurePermissions({ screenRecording: true });
@@ -791,7 +589,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "check_for_errors": {
-        const args = CheckForErrorsToolSchema.parse(request.params.arguments);
+        // Ensure screen recording permission
+        await ensurePermissions({ screenRecording: true });
         
         let checkRegion: Region | undefined;
         if (args.region) {
@@ -803,7 +602,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           );
         }
         
-        const errors = await errorDetector.detectErrors(checkRegion);
+        const errors = await withRetry(
+          async () => {
+            logger.startTimer('check_errors');
+            try {
+              return await errorDetector.detectErrors(checkRegion);
+            } finally {
+              logger.endTimer('check_errors');
+            }
+          },
+          'check_for_errors',
+          { maxAttempts: 2, delayMs: 1000 }
+        );
+        
+        logger.info('Error check completed', { 
+          errorsFound: errors.length,
+          region: args.region 
+        });
         
         if (errors.length === 0) {
           return {
@@ -1192,229 +1007,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
 
-      case "drag_drop": {
-        const args = DragDropToolSchema.parse(request.params.arguments);
-        
-        const start = new Point(args.startX, args.startY);
-        const end = new Point(args.endX, args.endY);
-        
-        // Move to start position
-        await mouse.setPosition(start);
-        
-        // Press the mouse button
-        const button = getMouseButton(args.button);
-        await mouse.pressButton(button);
-        
-        // Generate path and move along it
-        if (args.smooth) {
-          const steps = Math.max(10, Math.floor(args.duration / 50)); // More steps for longer duration
-          const path = generateSmoothPath(start, end, steps);
-          const stepDelay = args.duration / steps;
-          
-          for (const point of path) {
-            await mouse.setPosition(point);
-            await new Promise(resolve => setTimeout(resolve, stepDelay));
-          }
-        } else {
-          // Simple linear drag
-          await new Promise(resolve => setTimeout(resolve, args.duration / 2));
-          await mouse.setPosition(end);
-          await new Promise(resolve => setTimeout(resolve, args.duration / 2));
-        }
-        
-        // Release the mouse button
-        await mouse.releaseButton(button);
-        
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Dragged from (${args.startX}, ${args.startY}) to (${args.endX}, ${args.endY}) over ${args.duration}ms`,
-            },
-          ],
-        };
-      }
-
-      case "scroll": {
-        const args = ScrollToolSchema.parse(request.params.arguments);
-        
-        // Move to scroll position if specified
-        if (args.x !== undefined && args.y !== undefined) {
-          await mouse.setPosition(new Point(args.x, args.y));
-        }
-        
-        // Perform scrolling
-        if (args.smooth && args.pixelScroll) {
-          // Smooth pixel scrolling - break into smaller steps
-          const steps = Math.min(args.amount, 20); // Max 20 steps
-          const amountPerStep = Math.ceil(args.amount / steps);
-          
-          for (let i = 0; i < steps; i++) {
-            switch (args.direction) {
-              case "up":
-                await mouse.scrollUp(amountPerStep);
-                break;
-              case "down":
-                await mouse.scrollDown(amountPerStep);
-                break;
-              case "left":
-                await mouse.scrollLeft(amountPerStep);
-                break;
-              case "right":
-                await mouse.scrollRight(amountPerStep);
-                break;
-            }
-            await new Promise(resolve => setTimeout(resolve, 50));
-          }
-        } else {
-          // Regular scrolling
-          switch (args.direction) {
-            case "up":
-              await mouse.scrollUp(args.amount);
-              break;
-            case "down":
-              await mouse.scrollDown(args.amount);
-              break;
-            case "left":
-              await mouse.scrollLeft(args.amount);
-              break;
-            case "right":
-              await mouse.scrollRight(args.amount);
-              break;
-          }
-        }
-        
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Scrolled ${args.direction} by ${args.amount} ${args.pixelScroll ? 'pixels' : 'steps'}${args.smooth ? ' (smooth)' : ''}`,
-            },
-          ],
-        };
-      }
-
-      case "hover": {
-        const args = HoverToolSchema.parse(request.params.arguments);
-        
-        await mouse.setPosition(new Point(args.x, args.y));
-        await new Promise(resolve => setTimeout(resolve, args.duration));
-        
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Hovered at (${args.x}, ${args.y}) for ${args.duration}ms`,
-            },
-          ],
-        };
-      }
-
-      case "click_hold": {
-        const args = ClickHoldToolSchema.parse(request.params.arguments);
-        
-        await mouse.setPosition(new Point(args.x, args.y));
-        const button = getMouseButton(args.button);
-        
-        await mouse.pressButton(button);
-        await new Promise(resolve => setTimeout(resolve, args.duration));
-        await mouse.releaseButton(button);
-        
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Held ${args.button} click at (${args.x}, ${args.y}) for ${args.duration}ms`,
-            },
-          ],
-        };
-      }
-
-      case "relative_mouse_move": {
-        const args = RelativeMouseMoveToolSchema.parse(request.params.arguments);
-        
-        const currentPos = await mouse.getPosition();
-        const targetPos = new Point(
-          currentPos.x + args.offsetX,
-          currentPos.y + args.offsetY
-        );
-        
-        if (args.smooth) {
-          const path = generateSmoothPath(currentPos, targetPos, 10);
-          for (const point of path) {
-            await mouse.setPosition(point);
-            await new Promise(resolve => setTimeout(resolve, 20));
-          }
-        } else {
-          await mouse.setPosition(targetPos);
-        }
-        
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Moved mouse by (${args.offsetX}, ${args.offsetY}) from (${currentPos.x}, ${currentPos.y}) to (${targetPos.x}, ${targetPos.y})`,
-            },
-          ],
-        };
-      }
-
-      case "key_hold": {
-        const args = KeyHoldToolSchema.parse(request.params.arguments);
-        
-        const releaseFunction = await holdKeys(args.key);
-        await new Promise(resolve => setTimeout(resolve, args.duration));
-        await releaseFunction();
-        
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Held key(s) "${args.key}" for ${args.duration}ms`,
-            },
-          ],
-        };
-      }
-
-      case "type_with_delay": {
-        const args = TypeWithDelayToolSchema.parse(request.params.arguments);
-        
-        for (let i = 0; i < args.text.length; i++) {
-          const char = args.text[i];
-          
-          // Simulate occasional typos
-          if (args.mistakes && Math.random() < 0.02) { // 2% chance of typo
-            const typoChar = String.fromCharCode(char.charCodeAt(0) + (Math.random() > 0.5 ? 1 : -1));
-            await keyboard.type(typoChar);
-            await new Promise(resolve => setTimeout(resolve, getRandomDelay(100, 200)));
-            await keyboard.pressKey(Key.Backspace);
-            await keyboard.releaseKey(Key.Backspace);
-            await new Promise(resolve => setTimeout(resolve, getRandomDelay(50, 100)));
-          }
-          
-          await keyboard.type(char);
-          
-          // Human-like variable delay
-          const delay = getRandomDelay(args.minDelay, args.maxDelay);
-          
-          // Occasionally add longer pauses (thinking)
-          if (Math.random() < 0.05) { // 5% chance of longer pause
-            await new Promise(resolve => setTimeout(resolve, delay * 3));
-          } else {
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
-        }
-        
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Typed "${args.text}" with human-like delays (${args.minDelay}-${args.maxDelay}ms)${args.mistakes ? ' and occasional typos' : ''}`,
-            },
-          ],
-        };
-      }
-
       default:
         throw new Error(`Unknown tool: ${request.params.name}`);
     }
@@ -1508,11 +1100,32 @@ main().catch((error) => {
 
 // Cleanup on exit
 process.on('SIGINT', async () => {
-  await terminateOCR();
+  logger.info('Received SIGINT, shutting down gracefully...');
+  try {
+    await terminateOCR();
+    logger.info('Cleanup completed');
+  } catch (error) {
+    logger.error('Error during cleanup', error as Error);
+  }
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-  await terminateOCR();
+  logger.info('Received SIGTERM, shutting down gracefully...');
+  try {
+    await terminateOCR();
+    logger.info('Cleanup completed');
+  } catch (error) {
+    logger.error('Error during cleanup', error as Error);
+  }
   process.exit(0);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled rejection at:', reason as Error, { promise });
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception:', error);
+  process.exit(1);
 });

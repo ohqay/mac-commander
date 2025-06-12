@@ -2,11 +2,11 @@ export const mockScreenshots = {
   errorDialog: {
     width: 600,
     height: 400,
-    text: 'Error: The operation couldn't be completed. (OSStatus error -1743.)',
+    text: "Error: The operation couldn't be completed. (OSStatus error -1743.)",
     elements: [
       { type: 'icon', x: 50, y: 100, width: 64, height: 64 },
       { type: 'text', x: 130, y: 120, text: 'Error' },
-      { type: 'text', x: 130, y: 150, text: 'The operation couldn't be completed.' },
+      { type: 'text', x: 130, y: 150, text: "The operation couldn't be completed." },
       { type: 'button', x: 450, y: 330, width: 80, height: 30, text: 'OK' },
     ],
   },
@@ -150,7 +150,7 @@ export const mockErrorPatterns = {
   permissionDialog: {
     patterns: ['would like to access', 'wants to use', 'requesting permission'],
     severity: 'info',
-    commonActions: ['Allow', 'Don't Allow', 'OK'],
+    commonActions: ['Allow', "Don't Allow", 'OK'],
   },
   
   networkError: {
