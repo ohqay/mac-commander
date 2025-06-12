@@ -8,6 +8,7 @@ import {
   ToolSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { mouse, screen, Region, Button, keyboard, Key, Point, getWindows, getActiveWindow, windowWithTitle } from "@nut-tree-fork/nut-js";
 import { promises as fs } from "fs";
 import { dirname, join } from "path";
@@ -246,82 +247,82 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "diagnostic",
         description: "Run a comprehensive health check and get diagnostic information about the MCP server",
-        inputSchema: DiagnosticToolSchema,
+        inputSchema: zodToJsonSchema(DiagnosticToolSchema),
       },
       {
         name: "screenshot",
         description: "Capture a screenshot of the screen or a specific region",
-        inputSchema: ScreenshotToolSchema,
+        inputSchema: zodToJsonSchema(ScreenshotToolSchema),
       },
       {
         name: "click",
         description: "Click at specific coordinates on the screen",
-        inputSchema: ClickToolSchema,
+        inputSchema: zodToJsonSchema(ClickToolSchema),
       },
       {
         name: "type_text",
         description: "Type text using the keyboard",
-        inputSchema: TypeTextToolSchema,
+        inputSchema: zodToJsonSchema(TypeTextToolSchema),
       },
       {
         name: "mouse_move",
         description: "Move the mouse to specific coordinates",
-        inputSchema: MouseMoveToolSchema,
+        inputSchema: zodToJsonSchema(MouseMoveToolSchema),
       },
       {
         name: "get_screen_info",
         description: "Get information about the screen dimensions",
-        inputSchema: GetScreenInfoToolSchema,
+        inputSchema: zodToJsonSchema(GetScreenInfoToolSchema),
       },
       {
         name: "key_press",
         description: "Press a key or key combination",
-        inputSchema: KeyPressToolSchema,
+        inputSchema: zodToJsonSchema(KeyPressToolSchema),
       },
       {
         name: "check_for_errors",
         description: "Check the screen for common error indicators like red badges, error dialogs, or crash messages",
-        inputSchema: CheckForErrorsToolSchema,
+        inputSchema: zodToJsonSchema(CheckForErrorsToolSchema),
       },
       {
         name: "wait",
         description: "Wait for a specified amount of time",
-        inputSchema: WaitToolSchema,
+        inputSchema: zodToJsonSchema(WaitToolSchema),
       },
       {
         name: "list_windows",
         description: "List all open windows",
-        inputSchema: ListWindowsToolSchema,
+        inputSchema: zodToJsonSchema(ListWindowsToolSchema),
       },
       {
         name: "get_active_window",
         description: "Get information about the currently active window",
-        inputSchema: GetActiveWindowToolSchema,
+        inputSchema: zodToJsonSchema(GetActiveWindowToolSchema),
       },
       {
         name: "find_window",
         description: "Find a window by its title",
-        inputSchema: FindWindowToolSchema,
+        inputSchema: zodToJsonSchema(FindWindowToolSchema),
       },
       {
         name: "focus_window",
         description: "Focus/activate a window by its title",
-        inputSchema: FocusWindowToolSchema,
+        inputSchema: zodToJsonSchema(FocusWindowToolSchema),
       },
       {
         name: "get_window_info",
         description: "Get detailed information about a window",
-        inputSchema: GetWindowInfoToolSchema,
+        inputSchema: zodToJsonSchema(GetWindowInfoToolSchema),
       },
       {
         name: "extract_text",
         description: "Extract text from the screen using OCR",
-        inputSchema: ExtractTextToolSchema,
+        inputSchema: zodToJsonSchema(ExtractTextToolSchema),
       },
       {
         name: "find_text",
         description: "Find specific text on the screen and get its location",
-        inputSchema: FindTextToolSchema,
+        inputSchema: zodToJsonSchema(FindTextToolSchema),
       },
     ],
   };
