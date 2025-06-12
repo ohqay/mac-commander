@@ -11,7 +11,8 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { mouse, screen, Region, Button, keyboard, Key, Point, getWindows, getActiveWindow, windowWithTitle } from "@nut-tree-fork/nut-js";
 import { promises as fs } from "fs";
-import { dirname, join } from "path";
+import { dirname, join, resolve } from "path";
+import { tmpdir } from "os";
 import { fileURLToPath } from "url";
 import { ErrorDetector, commonErrorPatterns } from "./error-detection.js";
 import { imageToBase64, saveImage } from "./image-utils.js";
@@ -43,9 +44,53 @@ import {
   EnhancedKeyPressToolSchema
 } from "./validation.js";
 import { performHealthCheck, getDiagnosticReport } from "./health-check.js";
+import { screenshotAnalyzer, ScreenshotAnalysis, UIElement } from "./screenshot-analysis.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Screenshot temporary folder management
+const TEMP_SCREENSHOTS_FOLDER = join(tmpdir(), 'mcp-screenshots');
+let screenshotCounter = 0;
+
+// Initialize temp folder
+async function initTempFolder() {
+  try {
+    await fs.mkdir(TEMP_SCREENSHOTS_FOLDER, { recursive: true });
+    logger.info(`Screenshot temp folder initialized: ${TEMP_SCREENSHOTS_FOLDER}`);
+  } catch (error) {
+    logger.error('Failed to initialize temp folder', error as Error);
+  }
+}
+
+// Generate timestamp-based filename
+function generateScreenshotFilename(): string {
+  const now = new Date();
+  const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5); // Remove milliseconds and 'Z'
+  screenshotCounter++;
+  return `screenshot-${timestamp}-${screenshotCounter.toString().padStart(3, '0')}.png`;
+}
+
+// Clean up old screenshots (keep last 20)
+async function cleanupOldScreenshots() {
+  try {
+    const files = await fs.readdir(TEMP_SCREENSHOTS_FOLDER);
+    const screenshots = files
+      .filter(f => f.startsWith('screenshot-') && f.endsWith('.png'))
+      .map(f => ({ name: f, path: join(TEMP_SCREENSHOTS_FOLDER, f) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    
+    if (screenshots.length > 20) {
+      const toDelete = screenshots.slice(0, screenshots.length - 20);
+      for (const file of toDelete) {
+        await fs.unlink(file.path);
+        logger.debug(`Cleaned up old screenshot: ${file.name}`);
+      }
+    }
+  } catch (error) {
+    logger.warn('Failed to cleanup old screenshots', error as Error);
+  }
+}
 
 // Initialize error detector
 const errorDetector = new ErrorDetector();
@@ -56,6 +101,17 @@ const ocrBreaker = new CircuitBreaker(5, 60000);
 
 // Add diagnostic tool schema
 const DiagnosticToolSchema = z.object({});
+
+// Screenshot management schemas
+const ListScreenshotsToolSchema = z.object({});
+
+const ViewScreenshotToolSchema = z.object({
+  filename: z.string().describe("Filename of the screenshot to view (from list_screenshots)")
+});
+
+const CleanupScreenshotsToolSchema = z.object({
+  keepLast: z.number().optional().default(5).describe("Number of recent screenshots to keep (default: 5)")
+});
 
 // Tool schemas
 const ScreenshotToolSchema = z.object({
@@ -165,14 +221,33 @@ function getMouseButton(button: string): Button {
   }
 }
 
+// Helper function to convert string to Key enum
+function stringToKey(keyStr: string): Key | undefined {
+  const keyMap: { [key: string]: Key } = {
+    'a': Key.A, 'b': Key.B, 'c': Key.C, 'd': Key.D, 'e': Key.E, 'f': Key.F,
+    'g': Key.G, 'h': Key.H, 'i': Key.I, 'j': Key.J, 'k': Key.K, 'l': Key.L,
+    'm': Key.M, 'n': Key.N, 'o': Key.O, 'p': Key.P, 'q': Key.Q, 'r': Key.R,
+    's': Key.S, 't': Key.T, 'u': Key.U, 'v': Key.V, 'w': Key.W, 'x': Key.X,
+    'y': Key.Y, 'z': Key.Z,
+    '0': Key.Num0, '1': Key.Num1, '2': Key.Num2, '3': Key.Num3, '4': Key.Num4,
+    '5': Key.Num5, '6': Key.Num6, '7': Key.Num7, '8': Key.Num8, '9': Key.Num9,
+    '-': Key.Minus, '=': Key.Equal, '[': Key.LeftBracket, ']': Key.RightBracket,
+    '\\': Key.Backslash, ';': Key.Semicolon, "'": Key.Quote, ',': Key.Comma,
+    '.': Key.Period, '/': Key.Slash, '`': Key.Grave
+  };
+  
+  return keyMap[keyStr.toLowerCase()];
+}
+
 // Helper function to parse key combinations
 async function pressKeys(keyString: string) {
   const keys = keyString.toLowerCase().split("+");
   const modifiers: Key[] = [];
-  let mainKey: Key | string | undefined;
+  let mainKey: Key | undefined;
 
   for (const key of keys) {
-    switch (key.trim()) {
+    const trimmedKey = key.trim();
+    switch (trimmedKey) {
       case "cmd":
       case "command":
         modifiers.push(Key.LeftCmd);
@@ -218,25 +293,51 @@ async function pressKeys(keyString: string) {
       case "right":
         mainKey = Key.Right;
         break;
+      case "home":
+        mainKey = Key.Home;
+        break;
+      case "end":
+        mainKey = Key.End;
+        break;
+      case "pageup":
+        mainKey = Key.PageUp;
+        break;
+      case "pagedown":
+        mainKey = Key.PageDown;
+        break;
+      case "insert":
+        mainKey = Key.Insert;
+        break;
       default:
-        mainKey = key;
+        // Try to convert string to Key enum
+        const convertedKey = stringToKey(trimmedKey);
+        if (convertedKey) {
+          mainKey = convertedKey;
+        } else {
+          // For special characters or unsupported keys, log a warning but don't fail
+          console.warn(`Warning: Unsupported key "${trimmedKey}" in combination "${keyString}"`);
+        }
     }
   }
 
-  if (modifiers.length > 0 && mainKey) {
-    if (typeof mainKey === "string" && mainKey.length === 1) {
-      await keyboard.type(mainKey);
-    } else if (typeof mainKey !== "string") {
-      await keyboard.pressKey(...modifiers, mainKey);
-      await keyboard.releaseKey(...modifiers, mainKey);
-    }
-  } else if (mainKey) {
-    if (typeof mainKey === "string" && mainKey.length === 1) {
-      await keyboard.type(mainKey);
-    } else if (typeof mainKey !== "string") {
+  if (!mainKey) {
+    throw new Error(`Invalid key combination: ${keyString}`);
+  }
+
+  try {
+    if (modifiers.length > 0) {
+      // Press modifiers first, then main key, then release in reverse order
+      await keyboard.pressKey(...modifiers);
+      await keyboard.pressKey(mainKey);
+      await keyboard.releaseKey(mainKey);
+      await keyboard.releaseKey(...modifiers);
+    } else {
+      // Simple key press without modifiers
       await keyboard.pressKey(mainKey);
       await keyboard.releaseKey(mainKey);
     }
+  } catch (error) {
+    throw new Error(`Failed to press key combination "${keyString}": ${error}`);
   }
 }
 
@@ -246,83 +347,98 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: "diagnostic",
-        description: "Run a comprehensive health check and get diagnostic information about the MCP server",
+        description: "Run a comprehensive system health check and get detailed diagnostic information about the MCP server. This tool provides essential system status including permissions (screen recording, accessibility), dependencies, and performance metrics. Use this first when troubleshooting issues or before starting automation workflows to ensure all required permissions and components are properly configured. Returns detailed JSON report with system status, warnings, and recommendations.",
         inputSchema: zodToJsonSchema(DiagnosticToolSchema),
       },
       {
         name: "screenshot",
-        description: "Capture a screenshot of the screen or a specific region",
+        description: "Capture a high-quality screenshot of the entire screen or a specific rectangular region. Essential for visual inspection, debugging UI issues, and documenting current screen state. Can save to file (specify outputPath) or return as base64 string for immediate use. When capturing regions, use coordinates from get_screen_info or window information. Supports precise pixel-perfect captures. Commonly used with other tools like extract_text for OCR workflows or find_text for visual element location. Requires screen recording permission on macOS.",
         inputSchema: zodToJsonSchema(ScreenshotToolSchema),
       },
       {
         name: "click",
-        description: "Click at specific coordinates on the screen",
+        description: "Perform mouse clicks at precise screen coordinates with support for left, right, or middle mouse buttons. Essential for interacting with UI elements, buttons, menus, and any clickable interface components. Supports both single clicks and double-clicks. Use coordinates from screenshot analysis, find_text results, or window information. Always validate coordinates are within screen bounds using get_screen_info first. Consider using find_text to locate clickable text elements dynamically rather than hardcoded coordinates. Automatically moves mouse to target location before clicking. Requires accessibility permission on macOS.",
         inputSchema: zodToJsonSchema(ClickToolSchema),
       },
       {
         name: "type_text",
-        description: "Type text using the keyboard",
+        description: "Simulate keyboard typing to input text into the currently focused application or text field. Supports all standard characters, numbers, symbols, and Unicode text. Use adjustable delay between keystrokes (default 50ms) to ensure reliable input in different applications. Essential for form filling, search queries, code input, and any text entry tasks. Make sure to click on target input field first or use focus_window to ensure text goes to intended destination. For special keys or key combinations, use key_press instead. Supports newlines and special characters. Requires accessibility permission on macOS.",
         inputSchema: zodToJsonSchema(TypeTextToolSchema),
       },
       {
         name: "mouse_move",
-        description: "Move the mouse to specific coordinates",
+        description: "Move the mouse cursor to precise screen coordinates without clicking. Useful for hover actions, preparing for subsequent clicks, or triggering hover-based UI elements like tooltips and menus. Supports smooth movement animation (default) or instant positioning. Often used before click operations or to reveal hidden UI elements that appear on hover. Validate coordinates with get_screen_info to ensure they're within screen bounds. Commonly combined with screenshot to visually confirm cursor positioning. Less commonly used alone - usually part of larger interaction workflows. Requires accessibility permission on macOS.",
         inputSchema: zodToJsonSchema(MouseMoveToolSchema),
       },
       {
         name: "get_screen_info",
-        description: "Get information about the screen dimensions",
+        description: "Retrieve essential screen dimension information including total width and height in pixels. Critical for coordinate validation before performing clicks, mouse movements, or defining screenshot regions. Returns JSON with screen width and height properties. Use this as the first step in automation workflows to understand the display boundaries and ensure all coordinates stay within valid ranges. Essential for responsive automation that works across different screen sizes and resolutions. No parameters required - works on primary display.",
         inputSchema: zodToJsonSchema(GetScreenInfoToolSchema),
       },
       {
         name: "key_press",
-        description: "Press a key or key combination",
+        description: "Execute keyboard shortcuts and special key combinations essential for system navigation and application control. Supports single keys (Enter, Escape, Tab, Arrow keys) and modifier combinations (Cmd+C, Cmd+A, Ctrl+Alt+key). Use for shortcuts, navigation, window management, and triggering application-specific commands. Examples: 'cmd+c' for copy, 'cmd+tab' for app switching, 'enter' for confirmation, 'escape' for canceling dialogs. Perfect for keyboard-driven workflows and accessing menu items via shortcuts. For regular text input, use type_text instead. Requires accessibility permission on macOS.",
         inputSchema: zodToJsonSchema(KeyPressToolSchema),
       },
       {
         name: "check_for_errors",
-        description: "Check the screen for common error indicators like red badges, error dialogs, or crash messages",
+        description: "Intelligent visual error detection system that scans the screen for common error patterns including red notification badges, error dialog boxes, crash messages, warning symbols, and failure indicators. Uses advanced pattern recognition to identify UI elements that typically signal problems or require user attention. Can scan entire screen or specific regions. Essential for automation reliability - use after critical operations to ensure they completed successfully. Returns detailed information about detected errors including their type and location. Helps prevent cascading failures in automation workflows by catching issues early. Requires screen recording permission on macOS.",
         inputSchema: zodToJsonSchema(CheckForErrorsToolSchema),
       },
       {
         name: "wait",
-        description: "Wait for a specified amount of time",
+        description: "Pause execution for a specified duration in milliseconds to allow time for UI updates, animations, network requests, or application responses. Critical for reliable automation timing - prevents race conditions and ensures UI elements have time to load or respond. Use between actions when applications need time to process (e.g., after clicking a button that triggers loading, before taking a screenshot of updated content, or while waiting for dialogs to appear). Typical values: 500-1000ms for UI updates, 2000-5000ms for network operations. Essential tool for stable, reliable automation workflows.",
         inputSchema: zodToJsonSchema(WaitToolSchema),
       },
       {
         name: "list_windows",
-        description: "List all open windows",
+        description: "Enumerate all currently open windows across all applications with detailed information including window titles, positions, and dimensions. Essential for discovering available applications and windows before interaction. Returns comprehensive JSON array with each window's title, x/y coordinates, width/height, and center point calculations. Use to find target applications, understand current desktop layout, or locate specific windows by title. Perfect starting point for window management workflows. Helps identify exact window titles needed for find_window and focus_window operations. No parameters required - scans entire system.",
         inputSchema: zodToJsonSchema(ListWindowsToolSchema),
       },
       {
         name: "get_active_window",
-        description: "Get information about the currently active window",
+        description: "Retrieve detailed information about the currently focused/active window including its title, position, dimensions, and calculated center point. Essential for understanding current user context and determining which application is receiving input. Returns JSON with window title, x/y coordinates, width/height, and center coordinates for precise interaction. Useful for confirming correct window focus before automation actions, or for getting coordinates relative to the active window. Commonly used before click or type_text operations to ensure actions target the intended application. No parameters required.",
         inputSchema: zodToJsonSchema(GetActiveWindowToolSchema),
       },
       {
         name: "find_window",
-        description: "Find a window by its title",
+        description: "Search for and locate a specific window using partial title matching, returning detailed window information if found. Supports flexible partial matching - you don't need the exact full title. Essential for locating target applications before interaction. Returns JSON with found status, window title, position (x/y), dimensions (width/height), and center coordinates. Use list_windows first to discover available window titles, then use this tool to get precise information about your target window. Commonly followed by focus_window to bring the window to front, or used to get coordinates for region-specific screenshots or clicks. Requires accessibility permission on macOS.",
         inputSchema: zodToJsonSchema(FindWindowToolSchema),
       },
       {
         name: "focus_window",
-        description: "Focus/activate a window by its title",
+        description: "Bring a specific window to the foreground and make it the active/focused window using partial title matching. Essential for directing keyboard and mouse input to the correct application. Supports flexible partial matching - you don't need the exact full title. After focusing, the target window will receive all subsequent keyboard input from type_text and key_press operations. Critical first step in most automation workflows to ensure actions target the intended application. Use list_windows or find_window first to identify available windows and their titles. Common workflow: list_windows → focus_window → interact with application. Requires accessibility permission on macOS.",
         inputSchema: zodToJsonSchema(FocusWindowToolSchema),
       },
       {
         name: "get_window_info",
-        description: "Get detailed information about a window",
+        description: "Retrieve comprehensive information about a specific window using partial title matching, including precise positioning data and calculated center coordinates. Returns detailed JSON with window title, position (x/y), dimensions (width/height), and center point coordinates for precise interaction planning. More detailed than find_window, providing center coordinates which are essential for reliable clicking on window elements. Use when you need exact positioning data for clicking within a specific window, or for calculating relative coordinates for UI elements. Perfect for planning multi-step interactions within a particular application window. Supports partial title matching for flexibility.",
         inputSchema: zodToJsonSchema(GetWindowInfoToolSchema),
       },
       {
         name: "extract_text",
-        description: "Extract text from the screen using OCR",
+        description: "Extract and read text from the screen or specific regions using advanced Optical Character Recognition (OCR). Capable of recognizing text in various fonts, sizes, and styles from screenshots, UI elements, dialogs, and any visible text content. Can process entire screen or focus on specific rectangular regions for better accuracy and performance. Essential for reading dynamic content, form values, error messages, or any text that changes programmatically. Returns plain text string of all recognized text. Use with specific regions when possible for faster processing and better accuracy. Commonly paired with screenshot for visual verification. Requires screen recording permission on macOS.",
         inputSchema: zodToJsonSchema(ExtractTextToolSchema),
       },
       {
         name: "find_text",
-        description: "Find specific text on the screen and get its location",
+        description: "Locate specific text on the screen using OCR and return precise coordinates for clicking or interaction. Searches for text content (case-insensitive partial matching) and returns detailed location information including x/y coordinates, width/height, and confidence scores. Essential for dynamic UI automation where button or element positions change but text content remains consistent. Can search entire screen or specific regions for better performance. Returns JSON with found status, matching text, precise coordinates, and confidence levels. Perfect for clicking on buttons, menu items, or links identified by their text content rather than fixed coordinates. Enables robust automation that adapts to UI changes. Requires screen recording permission on macOS.",
         inputSchema: zodToJsonSchema(FindTextToolSchema),
+      },
+      {
+        name: "list_screenshots",
+        description: "List all screenshots saved in the temporary folder",
+        inputSchema: zodToJsonSchema(ListScreenshotsToolSchema),
+      },
+      {
+        name: "view_screenshot",
+        description: "View/display a specific screenshot from the temporary folder",
+        inputSchema: zodToJsonSchema(ViewScreenshotToolSchema),
+      },
+      {
+        name: "cleanup_screenshots",
+        description: "Clean up old screenshots from temporary folder",
+        inputSchema: zodToJsonSchema(CleanupScreenshotsToolSchema),
       },
     ],
   };
@@ -410,15 +526,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ],
           };
         } else {
-          const base64 = await imageToBase64(screenshot);
-          return {
-            content: [
-              {
-                type: "text",
-                text: base64,
-              },
-            ],
-          };
+          // Save to temp folder by default and return both base64 and temp path
+          const filename = generateScreenshotFilename();
+          const tempPath = join(TEMP_SCREENSHOTS_FOLDER, filename);
+          
+          try {
+            await saveImage(screenshot, tempPath);
+            await cleanupOldScreenshots();
+            logger.info(`Screenshot saved to temp folder: ${tempPath}`);
+            
+            const base64 = await imageToBase64(screenshot);
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Screenshot captured and saved to temporary folder: ${filename}\n\nBase64 data: ${base64}`,
+                },
+              ],
+            };
+          } catch (error) {
+            // Fallback to base64 only if temp save fails
+            logger.warn('Failed to save to temp folder, returning base64 only', error as Error);
+            const base64 = await imageToBase64(screenshot);
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: base64,
+                },
+              ],
+            };
+          }
         }
       }
 
@@ -1008,6 +1146,159 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
 
+      case "list_screenshots": {
+        try {
+          const files = await fs.readdir(TEMP_SCREENSHOTS_FOLDER);
+          const screenshots = files
+            .filter(f => f.startsWith('screenshot-') && f.endsWith('.png'))
+            .sort((a, b) => b.localeCompare(a)); // Most recent first
+          
+          const screenshotInfo = await Promise.all(
+            screenshots.map(async (filename) => {
+              const filepath = join(TEMP_SCREENSHOTS_FOLDER, filename);
+              try {
+                const stats = await fs.stat(filepath);
+                return {
+                  filename,
+                  filepath,
+                  size: stats.size,
+                  created: stats.birthtime.toISOString(),
+                  modified: stats.mtime.toISOString(),
+                };
+              } catch (error) {
+                return {
+                  filename,
+                  filepath,
+                  error: `Failed to get file stats: ${error}`,
+                };
+              }
+            })
+          );
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  tempFolder: TEMP_SCREENSHOTS_FOLDER,
+                  count: screenshots.length,
+                  screenshots: screenshotInfo,
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Failed to list screenshots: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      case "view_screenshot": {
+        try {
+          const filepath = join(TEMP_SCREENSHOTS_FOLDER, args.filename);
+          
+          // Validate filename for security
+          if (!args.filename.startsWith('screenshot-') || !args.filename.endsWith('.png')) {
+            throw new ValidationError('Invalid screenshot filename format', 'view_screenshot');
+          }
+          
+          // Check if file exists
+          await fs.access(filepath);
+          
+          // Read and convert to base64
+          const imageBuffer = await fs.readFile(filepath);
+          const base64 = `data:image/png;base64,${imageBuffer.toString('base64')}`;
+          
+          const stats = await fs.stat(filepath);
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  filename: args.filename,
+                  filepath,
+                  size: stats.size,
+                  created: stats.birthtime.toISOString(),
+                  modified: stats.mtime.toISOString(),
+                  base64Data: base64,
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          if ((error as any).code === 'ENOENT') {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Screenshot not found: ${args.filename}. Use list_screenshots to see available files.`,
+                },
+              ],
+              isError: true,
+            };
+          } else {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Failed to view screenshot: ${error instanceof Error ? error.message : String(error)}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+        }
+      }
+
+      case "cleanup_screenshots": {
+        try {
+          const files = await fs.readdir(TEMP_SCREENSHOTS_FOLDER);
+          const screenshots = files
+            .filter(f => f.startsWith('screenshot-') && f.endsWith('.png'))
+            .sort((a, b) => b.localeCompare(a)); // Most recent first
+          
+          const keepCount = args.keepLast || 5;
+          const toDelete = screenshots.slice(keepCount);
+          
+          let deletedCount = 0;
+          for (const filename of toDelete) {
+            try {
+              await fs.unlink(join(TEMP_SCREENSHOTS_FOLDER, filename));
+              deletedCount++;
+            } catch (error) {
+              logger.warn(`Failed to delete screenshot: ${filename}`, error as Error);
+            }
+          }
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Cleanup completed: deleted ${deletedCount} screenshots, kept ${Math.min(keepCount, screenshots.length)} most recent ones.`,
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Failed to cleanup screenshots: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
       default:
         throw new Error(`Unknown tool: ${request.params.name}`);
     }
@@ -1047,6 +1338,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   try {
     logger.info('Starting macOS Simulator MCP server...');
+    
+    // Initialize temp folder for screenshots
+    await initTempFolder();
     
     // Run initial health check
     const healthCheck = await performHealthCheck();
